@@ -470,9 +470,15 @@ def main_handler(event, context):
             }, ensure_ascii=False)
         }
     
-    request_api_key = event.get("headers", {}).get("x-api-key", 
-                    event.get("queryString", {}).get("apiKey", 
-                    body.get("apiKey")))
+    # 兼容大小写不同的header名称
+    request_api_key = None
+    for header_name, header_value in event.get("headers", {}).items():
+        if header_name.lower() == "x-api-key":
+            request_api_key = header_value
+            break
+    if not request_api_key:
+        request_api_key = event.get("queryString", {}).get("apiKey", 
+                        body.get("apiKey"))
     if request_api_key != CONFIG["api_key"]:
         return {
             "statusCode": 401,
