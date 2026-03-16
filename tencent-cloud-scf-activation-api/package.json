@@ -1,0 +1,15 @@
+{
+  "name": "tencent-cloud-scf-activation-api",
+  "version": "1.0.0",
+  "description": "Chrome插件激活码管理接口 - 腾讯云函数实现",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [
+    "activation-code",
+    "tencent-cloud",
+    "scf",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT"
+}

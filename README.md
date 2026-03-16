@@ -1,0 +1,51 @@
+# 激活码API服务 - Tencent Cloud SCF + SQLite
+
+这是一个完整可运行的Chrome插件激活码管理系统，部署在腾讯云Serverless云函数。
+
+## 项目说明
+
+- **运行环境**: Python 3.9 (北京地域**
+- **存储**: SQLite文件数据库，不需要额外数据库服务**
+- **持久化**: 支持挂载CFS文件系统，数据不丢失**
+- **成本**: 云函数免费额度足够，CFS按存储计费非常便宜，关闭日志服务无额外费用**
+
+## 快速开始
+
+最终可运行代码在 [`tencent-cloud-scf-activation-sqlite/](./tencent-cloud-scf-activation-sqlite/ 目录下，请看 [README](./tencent-cloud-scf-activation-sqlite/README.md) 有完整部署文档。
+
+## 功能列表
+
+| 功能 | 说明 |
+|------|------|
+| 激活码生成 | 支持自定义任意天数有效期，格式 `{duration}_{20位随机串}` |
+| 激活码验证 | 用户端验证，设备绑定，过期检测 |
+| 列出所有激活码 | 分页查询，支持过滤已激活/未激活 |
+| 删除激活码 | 管理端删除 |
+| 更新激活码 | 支持延期、修改套餐类型 |
+
+## 接口文档
+
+完整接口文档请参考 [这里](./tencent-cloud-scf-activation-sqlite/README.md#接口说明)
+
+## 部署
+
+完整部署步骤：
+
+1. 在腾讯云创建Python 云函数，北京地域，Python 3.9
+2. 打包代码上传
+3. 配置环境变量 `API_KEY`、`ENCRYPTION_KEY`
+4. **关闭日志服务**，避免额外收费
+5. 如需持久化，挂载CFS文件系统，修改 `DB_PATH` 指向CFS挂载路径
+6. 添加API网关触发器
+
+详细说明见 [这里](./tencent-cloud-scf-activation-sqlite/README.md)
+
+## 开发经验
+
+开发过程中遇到的坑和经验总结在 [`docs/`](./docs/`) 目录下：
+
+- [腾讯云函数Python开发经验.md](./docs/腾讯云函数Python开发经验.md)
+
+## 作者
+
+q10myhsg
