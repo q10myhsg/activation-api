@@ -119,6 +119,34 @@
 - [ ] 本地完整流程测试通过
 - [ ] 线上测试生成和验证都正常
 
+## 8. GitHub 使用经验
+
+### 敏感信息检测
+- GitHub 默认开启 secret scanning，会检测提交中的云API密钥、令牌等
+- 如果历史commit中包含敏感信息，即使后来删除，GitHub仍然会阻止push
+- 解决方法：**完全重置git历史**，重新初始commit，只保留干净代码
+
+```bash
+rm -rf .git
+git init
+git add .
+git config user.name "your-name"
+git config user.email "your-email"
+git commit -m "initial commit: clean code without secrets"
+git branch -M main
+git remote add origin git@github.com:username/repo.git
+git push -uf origin main
+```
+
+### 仓库范围
+- 不要把整个openclaw workspace都push上去，只保留项目相关代码
+- 删除框架、技能等无关内容，保持仓库干净
+
+### 解决push被block
+- 如果GitHub secret scanning阻止push，有两种解决：
+  1. 在GitHub上点击提示链接，允许这个secret（如果是已经作废的密钥）
+  2. 重置git历史，去掉所有包含密钥的commit，强制推送
+
 ---
 
 记住这些坑，下次开发腾讯云函数就能少踩雷，快速交付 ✅
