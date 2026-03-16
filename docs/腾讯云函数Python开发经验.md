@@ -84,12 +84,37 @@
 - 通过API返回详细错误信息 `message` 帮助定位问题
 - 完整错误信息返回来，调试更快
 
-## 7. 最终 Checklist 部署前检查
+## 7. HTTP请求头陷阱
+
+### 请求头大小写
+- 不同客户端、curl写法不同，可能传 `X-API-Key` 也可能传 `x-api-key`
+- 腾讯云函数会**保留原始大小写**，代码不能写死只取小写 `x-api-key`
+- 解决方法：不区分大小写匹配：
+  ```python
+  # 兼容大小写不同的header名称
+  request_api_key = None
+  for header_name, header_value in event.get("headers", {}).items():
+      if header_name.lower() == "x-api-key":
+          request_api_key = header_value
+          break
+  ```
+
+### tccli 命令行参数
+- 不同版本tccli参数格式不同，有的要驼峰 `--FunctionName`，有的要小写 `--function-name`
+- 参数顺序也有讲究，先 `tccli scf <action>` 再跟参数
+- 遇到参数错误多试几种写法，或者看 `tccli scf help` 和 `tccli scf <action> help`
+
+### 上传代码包
+- `UpdateFunctionCode` 需要把zip文件base64编码后直接传参数，不能用文件URL
+- 正确传参：`--ZipFile "$(base64 -w0 /path/to/deployment.zip)"`
+
+## 8. 最终 Checklist 部署前检查
 
 - [ ] 运行环境选择正确（Python 3.9）
 - [ ] 关闭日志服务（省钱）
 - [ ] 入口文件在zip根目录
 - [ ] 处理好了datetime兼容性问题
+- [ ] 请求头兼容大小写（`X-API-Key` / `x-api-key`）
 - [ ] 环境变量配置正确
 - [ ] 本地完整流程测试通过
 - [ ] 线上测试生成和验证都正常
