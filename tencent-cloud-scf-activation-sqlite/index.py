@@ -417,6 +417,13 @@ def handle_update(body):
         if "auth_code" in update_data:
             del update_data["auth_code"]
         
+        # 如果解除绑定，清除machine_code和相关信息
+        if update_data.get("unbind_machine"):
+            update_data["machine_code"] = None
+            update_data["activated_date"] = None
+            update_data["expiry_date"] = None
+            del update_data["unbind_machine"]
+        
         update_activation_code(auth_code, update_data)
         info.update(update_data)
         
@@ -431,6 +438,290 @@ def handle_update(body):
             "status": "error",
             "message": f"更新失败: {str(e)}",
             "data": None
+        }
+
+# -------------------------- 设备管理接口 --------------------------
+def handle_device_info(body):
+    """查询设备信息接口
+    返回设备激活状态、过期时间、剩余天数等
+    """
+    machine_code = body.get("machine_code")
+    
+    if not machine_code:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 machine_code",
+            "data": None
+        }
+    
+    try:
+        init_db()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ?", (machine_code,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            # 设备未记录
+            return {
+                "status": "success",
+                "message": "查询成功",
+                "data": {
+                    "machine_code": machine_code,
+                    "is_active": False,
+                    "auth_code": None,
+                    "package_type": None,
+                    "activated_date": None,
+                    "expiry_date": None,
+                    "expired": False,
+                    "days_remaining": 0,
+                    "first_activation": True,
+                    "last_verify_time": None,
+                    "created_at": None
+                }
+            }
+        
+        info = dict(row)
+        is_active = info.get("machine_code") is not None and info.get("expiry_date") is not None
+        expired = False
+        days_remaining = 0
+        
+        if info.get("expiry_date") and info["expiry_date"] != "9999-12-31T23:59:59":
+            try:
+                expiry_str = info["expiry_date"]
+                if expiry_str.endswith('Z'):
+                    expiry_str = expiry_str[:-1]
+                expiry = datetime.fromisoformat(expiry_str)
+                now = datetime.utcnow()
+                expired = now > expiry
+                if not expired:
+                    delta = expiry - now
+                    days_remaining = delta.days
+                else:
+                    days_remaining = 0
+            except Exception:
+                expired = True
+                days_remaining = 0
+        elif info["expiry_date"] == "9999-12-31T23:59:59":
+            # 永久有效
+            days_remaining = -1
+            expired = False
+        
+        first_activation = info.get("activated_date") is None or info.get("last_verify_time") is None
+        
+        result = {
+            "machine_code": info["machine_code"],
+            "is_active": is_active and not expired,
+            "auth_code": info["auth_code"],
+            "package_type": info.get("package_type"),
+            "activated_date": info.get("activated_date"),
+            "expiry_date": info.get("expiry_date"),
+            "expired": expired,
+            "days_remaining": days_remaining,
+            "first_activation": first_activation,
+            "last_verify_time": None,
+            "created_at": info.get("activated_date")
+        }
+        
+        return {
+            "status": "success",
+            "message": "查询成功",
+            "data": result
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"查询失败: {str(e)}",
+            "data": None
+        }
+
+def handle_device_list(body):
+    """列出设备接口
+    分页列出所有设备，支持按激活状态筛选
+    """
+    is_active = body.get("is_active")
+    expired = body.get("expired")
+    page = body.get("page", 1)
+    page_size = body.get("page_size", 20)
+    offset = (page - 1) * page_size
+    
+    try:
+        init_db()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 简单实现，先查询所有再过滤
+        cursor.execute("SELECT * FROM activation_codes WHERE machine_code IS NOT NULL ORDER BY activated_date DESC LIMIT ? OFFSET ?", 
+                      (page_size + 1, offset))
+        rows = cursor.fetchall()
+        result_list = [dict(row) for row in rows]
+        
+        # 过滤
+        filtered = []
+        for item in result_list:
+            match = True
+            if is_active is not None:
+                item_active = item.get("machine_code") is not None
+                if item_active != is_active:
+                    match = False
+            if match and expired is not None:
+                # 计算是否过期
+                if item.get("expiry_date") and item["expiry_date"] != "9999-12-31T23:59:59":
+                    try:
+                        expiry_str = item["expiry_date"]
+                        if expiry_str.endswith('Z'):
+                            expiry_str = expiry_str[:-1]
+                        expiry = datetime.fromisoformat(expiry_str)
+                        item_expired = datetime.utcnow() > expiry
+                    except Exception:
+                        item_expired = True
+                else:
+                    item_expired = False
+                if item_expired != expired:
+                    match = False
+            if match:
+                filtered.append(item)
+        
+        # 统计总数
+        cursor.execute("SELECT COUNT(*) FROM activation_codes WHERE machine_code IS NOT NULL")
+        total = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            "status": "success",
+            "message": "获取列表成功",
+            "data": {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "items": filtered
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"获取列表失败: {str(e)}",
+            "data": None
+        }
+
+def handle_device_unbind(body):
+    """解绑设备接口
+    解除设备与激活码的绑定，使激活码可以重新绑定
+    """
+    machine_code = body.get("machine_code")
+    auth_code = body.get("auth_code")
+    
+    if not machine_code:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 machine_code",
+            "data": None
+        }
+    
+    try:
+        # 如果没提供auth_code，先查询绑定的auth_code
+        if not auth_code:
+            init_db()
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ?", (machine_code,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": "设备未绑定任何激活码",
+                    "data": {
+                        "unbound": False
+                    }
+                }
+            auth_code = row[0]
+            conn.close()
+        
+        # 解绑：清除激活码上的机器绑定信息
+        update_data = {
+            "machine_code": None,
+            "activated_date": None,
+            "expiry_date": None
+        }
+        update_activation_code(auth_code, update_data)
+        
+        return {
+            "status": "success",
+            "message": "设备解绑成功，激活码可以重新绑定了",
+            "data": {
+                "unbound": True,
+                "auth_code": auth_code
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"解绑失败: {str(e)}",
+            "data": {
+                "unbound": False
+            }
+        }
+
+def handle_device_delete(body):
+    """删除设备接口
+    删除设备记录（解绑并清除记录）
+    """
+    machine_code = body.get("machine_code")
+    
+    if not machine_code:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 machine_code",
+            "data": None
+        }
+    
+    try:
+        init_db()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ?", (machine_code,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return {
+                "status": "success",
+                "message": "设备不存在",
+                "data": {
+                    "deleted": False
+                }
+            }
+        
+        auth_code = row[0]
+        cursor.execute("DELETE FROM activation_codes WHERE auth_code = ?", (auth_code,))
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        if auth_code in fallback_activation_codes:
+            del fallback_activation_codes[auth_code]
+        
+        return {
+            "status": "success",
+            "message": f"设备 {machine_code} 删除成功",
+            "data": {
+                "deleted": affected > 0
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"删除失败: {str(e)}",
+            "data": {
+                "deleted": False
+            }
         }
 
 # -------------------------- 主入口 --------------------------
@@ -516,6 +807,14 @@ def main_handler(event, context):
             result = handle_delete(body)
         elif path.endswith("/auth/update") and http_method == "POST":
             result = handle_update(body)
+        elif path.endswith("/device/info") and http_method == "POST":
+            result = handle_device_info(body)
+        elif path.endswith("/device/list") and http_method == "POST":
+            result = handle_device_list(body)
+        elif path.endswith("/device/unbind") and http_method == "POST":
+            result = handle_device_unbind(body)
+        elif path.endswith("/device/delete") and http_method == "POST":
+            result = handle_device_delete(body)
         else:
             return {
                 "statusCode": 404,
