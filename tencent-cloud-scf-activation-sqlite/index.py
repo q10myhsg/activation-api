@@ -236,16 +236,9 @@ def handle_verify(body):
                     "message": f"过期时间格式错误: {info.get('expiry_date')}, error: {str(e)}",
                     "data": None
                 }
-    else:
-        # 未使用过，根据激活码有效期计算过期时间
-        duration = info.get("duration")
-        if duration != -1:  # 不是永久有效
-            expiry = now + timedelta(days=duration)
-            info["expiry_date"] = expiry.isoformat()
-        else:
-            info["expiry_date"] = "9999-12-31T23:59:59"
     
     if not info.get("machine_code"):
+        # 未使用过，首次激活，根据激活码有效期计算过期时间
         info["machine_code"] = machine_code
         info["activated_date"] = datetime.utcnow().isoformat()
         duration = info.get("duration")
@@ -390,6 +383,41 @@ def handle_delete(body):
             "data": None
         }
 
+def handle_auth_info(body):
+    """查询激活码信息接口
+    查询激活码的详细信息，包括状态、绑定设备、过期时间等
+    """
+    auth_code = body.get("auth_code")
+    
+    if not auth_code:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 auth_code",
+            "data": None
+        }
+    
+    try:
+        info = get_activation_code(auth_code)
+        if not info:
+            return {
+                "status": "error",
+                "message": "激活码不存在",
+                "data": None
+            }
+        
+        return {
+            "status": "success",
+            "message": "查询成功",
+            "data": info
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"查询失败: {str(e)}",
+            "data": None
+        }
+
 def handle_update(body):
     """更新激活码信息（管理接口）
     支持: 延期、换绑设备、修改过期时间等
@@ -424,6 +452,21 @@ def handle_update(body):
             update_data["expiry_date"] = None
             del update_data["unbind_machine"]
         
+        # 如果更新了duration且已经激活，需要重新计算过期时间
+        if "duration" in update_data and info.get("activated_date"):
+            # 获取激活时间
+            activated_str = info.get("activated_date")
+            if activated_str:
+                if activated_str.endswith('Z'):
+                    activated_str = activated_str[:-1]
+                activated = datetime.fromisoformat(activated_str)
+                duration = update_data["duration"]
+                if duration == -1:
+                    update_data["expiry_date"] = "9999-12-31T23:59:59"
+                else:
+                    expiry = activated + timedelta(days=duration)
+                    update_data["expiry_date"] = expiry.isoformat()
+        
         update_activation_code(auth_code, update_data)
         info.update(update_data)
         
@@ -444,6 +487,7 @@ def handle_update(body):
 def handle_device_info(body):
     """查询设备信息接口
     返回设备激活状态、过期时间、剩余天数等
+    如果一个设备绑定了多个激活码，返回最新激活且未过期的那个
     """
     machine_code = body.get("machine_code")
     
@@ -458,11 +502,12 @@ def handle_device_info(body):
         init_db()
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ?", (machine_code,))
-        row = cursor.fetchone()
+        # 按激活时间倒序，返回最新的
+        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ? ORDER BY activated_date DESC", (machine_code,))
+        rows = cursor.fetchall()
         conn.close()
         
-        if not row:
+        if len(rows) == 0:
             # 设备未记录
             return {
                 "status": "success",
@@ -482,7 +527,31 @@ def handle_device_info(body):
                 }
             }
         
-        info = dict(row)
+        # 找到第一个未过期的，如果都过期了返回最后一个
+        selected_row = None
+        for row in rows:
+            info_candidate = dict(row)
+            if info_candidate.get("expiry_date"):
+                if info_candidate["expiry_date"] == "9999-12-31T23:59:59":
+                    # 永久有效，选这个
+                    selected_row = info_candidate
+                    break
+                try:
+                    expiry_str = info_candidate["expiry_date"]
+                    if expiry_str.endswith('Z'):
+                        expiry_str = expiry_str[:-1]
+                    expiry = datetime.fromisoformat(expiry_str)
+                    if datetime.utcnow() <= expiry:
+                        # 未过期，选这个
+                        selected_row = info_candidate
+                        break
+                except Exception:
+                    continue
+        # 如果都过期了，还是选第一个（最新的）
+        if selected_row is None:
+            selected_row = dict(rows[0])
+        
+        info = selected_row
         is_active = info.get("machine_code") is not None and info.get("expiry_date") is not None
         expired = False
         days_remaining = 0
@@ -801,6 +870,8 @@ def main_handler(event, context):
             result = handle_verify(body)
         elif path.endswith("/auth/generate") and http_method == "POST":
             result = handle_generate(body)
+        elif path.endswith("/auth/info") and http_method == "POST":
+            result = handle_auth_info(body)
         elif path.endswith("/auth/list") and http_method == "POST":
             result = handle_list(body)
         elif path.endswith("/auth/delete") and http_method == "POST":
