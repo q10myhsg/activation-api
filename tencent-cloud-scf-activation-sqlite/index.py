@@ -534,130 +534,6 @@ def handle_update(body):
         }
 
 # -------------------------- 设备管理接口 --------------------------
-def handle_device_permission(body):
-    """获取设备功能权限接口
-    返回当前设备的功能权限和使用次数限制
-    """
-    machine_code = body.get("machine_code")
-    
-    if not machine_code:
-        return {
-            "status": "error",
-            "message": "缺少必填参数 machine_code",
-            "data": {}
-        }
-    
-    try:
-        # 查找这个设备当前激活的激活码
-        init_db()
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ? ORDER BY activated_date DESC", (machine_code,))
-        rows = cursor.fetchall()
-        conn.close()
-        
-        # 默认权限（未认证用户）
-        auth_status = "unauthenticated"
-        package_type = None
-        
-        # 默认免费权限
-        permissions = {
-            "prompt_word": {
-                "daily_limit": 20,
-                "enable_like_filter": True
-            },
-            "download": {
-                "daily_limit": 20
-            },
-            "search": {
-                "high_value_notes": {
-                    "daily_limit": 30
-                },
-                "keyword_expansion": {
-                    "daily_limit": 10
-                }
-            }
-        }
-        
-        # 如果找到了绑定到这个设备的激活码，使用激活码套餐权限
-        if len(rows) > 0:
-            # 找最新未过期的激活码
-            selected_row = None
-            for row in rows:
-                info_candidate = dict(row)
-                if info_candidate.get("expiry_date"):
-                    if info_candidate["expiry_date"] == "9999-12-31T23:59:59":
-                        selected_row = info_candidate
-                        break
-                    try:
-                        expiry_str = info_candidate["expiry_date"]
-                        if expiry_str.endswith('Z'):
-                            expiry_str = expiry_str[:-1]
-                        expiry = datetime.fromisoformat(expiry_str)
-                        if datetime.utcnow() <= expiry:
-                            selected_row = info_candidate
-                            break
-                    except Exception:
-                        continue
-            if selected_row is None:
-                selected_row = dict(rows[0])
-            
-            # 检查是否过期
-            info = selected_row
-            is_valid = False
-            if info.get("expiry_date"):
-                if info["expiry_date"] == "9999-12-31T23:59:59":
-                    is_valid = True
-                else:
-                    try:
-                        expiry_str = info["expiry_date"]
-                        if expiry_str.endswith('Z'):
-                            expiry_str = expiry_str[:-1]
-                        expiry = datetime.fromisoformat(expiry_str)
-                        if datetime.utcnow() <= expiry:
-                            is_valid = True
-                    except Exception:
-                        is_valid = False
-            
-            if is_valid:
-                auth_status = "authenticated"
-                package_type = info.get("package_type")
-                # 根据套餐类型配置不同权限，这里默认开放全部权限，实际可根据需求调整
-                permissions = {
-                    "prompt_word": {
-                        "daily_limit": 50,
-                        "enable_like_filter": False
-                    },
-                    "download": {
-                        "daily_limit": 20
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 100
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 50
-                        }
-                    }
-                }
-        
-        return {
-            "status": "success",
-            "message": "权限获取成功",
-            "data": {
-                "auth_status": auth_status,
-                "package_type": package_type,
-                "permissions": permissions
-            }
-        }
-    except Exception as e:
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": f"获取权限失败: {str(e)}",
-            "data": None
-        }
-
 def handle_device_info(body):
     """查询设备信息接口
     返回设备激活状态、过期时间、剩余天数等
@@ -753,6 +629,45 @@ def handle_device_info(body):
         
         first_activation = info.get("activated_date") is None or info.get("last_verify_time") is None
         
+        # 获取权限信息
+        permissions = {
+            "prompt_word": {
+                "daily_limit": 20,
+                "enable_like_filter": True
+            },
+            "download": {
+                "daily_limit": 20
+            },
+            "search": {
+                "high_value_notes": {
+                    "daily_limit": 30
+                },
+                "keyword_expansion": {
+                    "daily_limit": 10
+                }
+            }
+        }
+        
+        if is_active and not expired and info:
+            # 已激活，使用套餐权限
+            permissions = {
+                "prompt_word": {
+                    "daily_limit": 50,
+                    "enable_like_filter": False
+                },
+                "download": {
+                    "daily_limit": 20
+                },
+                "search": {
+                    "high_value_notes": {
+                        "daily_limit": 100
+                    },
+                    "keyword_expansion": {
+                        "daily_limit": 50
+                    }
+                }
+            }
+        
         result = {
             "machine_code": info["machine_code"],
             "is_active": is_active and not expired,
@@ -764,7 +679,8 @@ def handle_device_info(body):
             "days_remaining": days_remaining,
             "first_activation": first_activation,
             "last_verify_time": None,
-            "created_at": info.get("activated_date")
+            "created_at": info.get("activated_date"),
+            "permissions": permissions
         }
         
         return {
@@ -1060,8 +976,6 @@ def main_handler(event, context):
             result = handle_device_unbind(body)
         elif path.endswith("/device/delete") and http_method == "POST":
             result = handle_device_delete(body)
-        elif path.endswith("/device/permission") and http_method == "POST":
-            result = handle_device_permission(body)
         else:
             return {
                 "statusCode": 404,
