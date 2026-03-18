@@ -205,33 +205,45 @@ def handle_verify(body):
         }
     
     now = datetime.utcnow()
-    if info.get("expiry_date"):
-        try:
-            expiry_str = info["expiry_date"]
-            if expiry_str.endswith('Z'):
-                expiry_str = expiry_str[:-1]
-            expiry = datetime.fromisoformat(expiry_str)
-            if now > expiry:
-                return {
-                    "status": "expired",
-                    "message": "激活码已过期",
-                    "data": None
-                }
-        except Exception as e:
-            traceback.print_exc()
+    current_expiry = body.get("current_expiry_date")
+    
+    # 如果已使用，验证 current_expiry_date 是否与存储的过期时间一致
+    if info.get("machine_code") is not None:
+        # 已使用过，验证客户端提供的过期时间是否与存储一致
+        if current_expiry is not None and current_expiry != info.get("expiry_date"):
             return {
                 "status": "invalid",
-                "message": f"过期时间格式错误: {info.get('expiry_date')}, error: {str(e)}",
+                "message": "激活信息已失效，请重新验证",
                 "data": None
             }
-    
-    current_expiry = body.get("current_expiry_date")
-    if current_expiry and current_expiry != info.get("expiry_date"):
-        return {
-            "status": "invalid",
-            "message": "激活信息已失效，请重新验证",
-            "data": None
-        }
+        # 检查是否已过期
+        if info.get("expiry_date"):
+            try:
+                expiry_str = info["expiry_date"]
+                if expiry_str.endswith('Z'):
+                    expiry_str = expiry_str[:-1]
+                expiry = datetime.fromisoformat(expiry_str)
+                if now > expiry:
+                    return {
+                        "status": "expired",
+                        "message": "激活码已过期",
+                        "data": None
+                    }
+            except Exception as e:
+                traceback.print_exc()
+                return {
+                    "status": "invalid",
+                    "message": f"过期时间格式错误: {info.get('expiry_date')}, error: {str(e)}",
+                    "data": None
+                }
+    else:
+        # 未使用过，根据激活码有效期计算过期时间
+        duration = info.get("duration")
+        if duration != -1:  # 不是永久有效
+            expiry = now + timedelta(days=duration)
+            info["expiry_date"] = expiry.isoformat()
+        else:
+            info["expiry_date"] = "9999-12-31T23:59:59"
     
     if not info.get("machine_code"):
         info["machine_code"] = machine_code
