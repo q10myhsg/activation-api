@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import json
-import hashlib
-import hmac
-import base64
 import time
 import os
 import sqlite3
@@ -18,7 +15,6 @@ import traceback
 CONFIG = {
     "admin_api_key": os.environ.get("ADMIN_API_KEY", ""),
     "client_api_keys": [k.strip() for k in os.environ.get("CLIENT_API_KEYS", "").split(",") if k.strip()],
-    "encryption_key": os.environ.get("ENCRYPTION_KEY", "your-encryption-secret-key").encode('utf-8'),
     "rate_limit": int(os.environ.get("RATE_LIMIT", "60")),
     "db_path": os.environ.get("DB_PATH", "/tmp/activation.db"),
 }
@@ -204,28 +200,6 @@ def generate_random_code(length=20):
     """生成指定长度的随机字母数字字符串"""
     chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     return ''.join(secrets.choice(chars) for _ in range(length))
-
-def encrypt_data(data):
-    data_str = json.dumps(data, sort_keys=True)
-    signature = hmac.new(CONFIG["encryption_key"], data_str.encode('utf-8'), hashlib.sha256).hexdigest()
-    combined = f"{data_str}|{signature}"
-    return base64.urlsafe_b64encode(combined.encode('utf-8')).decode('utf-8')
-
-def decrypt_data(encrypted):
-    try:
-        decoded = base64.urlsafe_b64decode(encrypted.encode('utf-8')).decode('utf-8')
-        parts = decoded.rsplit('|', 1)
-        if len(parts) != 2:
-            return None
-        data_str, signature = parts
-        data = json.loads(data_str)
-        
-        expected_signature = hmac.new(CONFIG["encryption_key"], data_str.encode('utf-8'), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected_signature):
-            return None
-        return data
-    except Exception:
-        return None
 
 # -------------------------- 频率限制 --------------------------
 def check_rate_limit(client_ip):
