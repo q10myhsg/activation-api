@@ -717,44 +717,131 @@ def handle_device_info(body):
         
         first_activation = info.get("activated_date") is None or info.get("last_verify_time") is None
         
-        # 获取权限信息
-        permissions = {
-            "prompt_word": {
-                "daily_limit": 20,
-                "enable_like_filter": True
-            },
-            "download": {
-                "daily_limit": 20
-            },
-            "search": {
-                "high_value_notes": {
-                    "daily_limit": 30
+        # 权限配置：[client_type][package_type] -> 权限JSON
+        # 支持任意扩展，增减套餐和修改配额只需要改这个配置表
+        PERMISSION_CONFIG = {
+            "browser-extension": {
+                "basic": {
+                    "prompt_word": {
+                        "daily_limit": 20,
+                        "enable_like_filter": True
+                    },
+                    "download": {
+                        "daily_limit": 20
+                    },
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 30
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 10
+                        }
+                    }
                 },
-                "keyword_expansion": {
-                    "daily_limit": 10
+                "premium": {
+                    "prompt_word": {
+                        "daily_limit": 50,
+                        "enable_like_filter": False
+                    },
+                    "download": {
+                        "daily_limit": 20
+                    },
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 100
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 50
+                        }
+                    }
+                },
+                "vip": {
+                    # 在此定义vip更高权限
+                    "prompt_word": {
+                        "daily_limit": 100,
+                        "enable_like_filter": False
+                    },
+                    "download": {
+                        "daily_limit": 50
+                    },
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 200
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 100
+                        }
+                    }
                 }
-            }
-        }
-        
-        if is_active and not expired and info:
-            # 已激活，使用套餐权限
-            permissions = {
-                "prompt_word": {
-                    "daily_limit": 50,
-                    "enable_like_filter": False
+            },
+            "pc-client": {
+                "basic": {
+                    "prompt_word": {
+                        "daily_limit": 30,
+                        "enable_like_filter": True
+                    },
+                    "download": {
+                        "daily_limit": 30
+                    },
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 50
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 20
+                        }
+                    }
                 },
-                "download": {
-                    "daily_limit": 20
+                "premium": {
+                    "prompt_word": {
+                        "daily_limit": 80,
+                        "enable_like_filter": False
+                    },
+                    "download": {
+                        "daily_limit": 50
+                    },
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 150
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 80
+                        }
+                    }
                 },
-                "search": {
-                    "high_value_notes": {
+                "vip": {
+                    # 在此定义vip更高权限
+                    "prompt_word": {
+                        "daily_limit": 150,
+                        "enable_like_filter": False
+                    },
+                    "download": {
                         "daily_limit": 100
                     },
-                    "keyword_expansion": {
-                        "daily_limit": 50
+                    "search": {
+                        "high_value_notes": {
+                            "daily_limit": 300
+                        },
+                        "keyword_expansion": {
+                            "daily_limit": 150
+                        }
                     }
                 }
             }
+        }
+
+        # 默认权限（未激活）
+        permissions = PERMISSION_CONFIG["browser-extension"]["basic"]
+        
+        if is_active and not expired and info:
+            # 已激活，根据 client_type + package_type 获取权限
+            package_type = info.get("package_type", "basic")
+            ct = client_type  # client_type
+            # 如果配置里没有这个套餐或者客户端，fallback到basic
+            if ct in PERMISSION_CONFIG and package_type in PERMISSION_CONFIG[ct]:
+                permissions = PERMISSION_CONFIG[ct][package_type]
+            else:
+                permissions = PERMISSION_CONFIG["browser-extension"]["basic"]
         
         result = {
             "machine_code": info["machine_code"],
@@ -1061,6 +1148,12 @@ def main_handler(event, context):
         request_api_key = event.get("queryString", {}).get("apiKey", 
                         body.get("apiKey"))
     
+    # 调试：打印配置信息，方便排查
+    print(f"ADMIN_API_KEY from env: '{os.environ.get('ADMIN_API_KEY', '')}'")
+    print(f"CLIENT_API_KEYS from env: '{os.environ.get('CLIENT_API_KEYS', '')}'")
+    print(f"CONFIG client_api_keys: {CONFIG['client_api_keys']}")
+    print(f"Request API Key: '{request_api_key}'")
+    
     role, valid = verify_api_key(request_api_key)
     if not valid:
         return {
@@ -1069,6 +1162,12 @@ def main_handler(event, context):
             "body": json.dumps({
                 "status": "error",
                 "message": "API Key 无效",
+                "debug": {
+                    "admin_api_key_configured": len(CONFIG["admin_api_key"]) > 0,
+                    "client_api_keys_count": len(CONFIG["client_api_keys"]),
+                    "client_api_keys": CONFIG["client_api_keys"],
+                    "request_api_key": request_api_key
+                },
                 "data": None
             }, ensure_ascii=False)
         }
