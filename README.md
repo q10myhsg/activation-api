@@ -11,7 +11,7 @@
 
 ## 快速开始
 
-最终可运行代码在 [`xhs_helper_admin/`](./xhs_helper_admin/ 目录下，请看 [README](./xhs_helper_admin/README.md) 有完整部署文档。
+最终可运行代码在 [`xhs_helper_api_server/`](./xhs_helper_api_server/ 目录下，请看 [README](./xhs_helper_api_server/README.md) 有完整部署文档。
 
 ## 功能列表
 
