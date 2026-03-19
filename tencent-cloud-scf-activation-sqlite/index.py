@@ -36,6 +36,7 @@ def init_db():
             auth_code TEXT PRIMARY KEY,
             duration INTEGER NOT NULL,
             package_type TEXT NOT NULL,
+            client_type TEXT NOT NULL,
             generate_date TEXT NOT NULL,
             activated_date TEXT,
             machine_code TEXT,
@@ -97,21 +98,47 @@ def delete_activation_code(auth_code):
     conn.close()
     return affected > 0
 
-def list_activation_codes(offset=0, limit=20, status=None):
+def list_activation_codes(offset=0, limit=20, status=None, client_type=None):
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    sql = "SELECT * FROM activation_codes ORDER BY generate_date DESC LIMIT ? OFFSET ?"
-    params = [limit, offset]
+    # 构建查询条件
+    conditions = []
+    params = []
+    
+    if status:
+        if status == "activated":
+            conditions.append("machine_code IS NOT NULL")
+        elif status == "unused":
+            conditions.append("machine_code IS NULL")
+        elif status == "expired":
+            conditions.append("expiry_date IS NOT NULL")
+    
+    if client_type:
+        conditions.append("client_type = ?")
+        params.append(client_type)
+    
+    if len(conditions) > 0:
+        where_clause = " WHERE " + " AND ".join(conditions)
+    else:
+        where_clause = ""
+    
+    sql = f"SELECT * FROM activation_codes {where_clause} ORDER BY generate_date DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
     
     cursor.execute(sql, params)
     rows = cursor.fetchall()
     result = [dict(row) for row in rows]
     
+    # 统计总数
+    count_sql = "SELECT COUNT(*) FROM activation_codes" + where_clause
+    cursor.execute(count_sql, params[:-2])
+    total = cursor.fetchone()[0]
+    
     conn.close()
     return {
-        "total": len(result),
+        "total": total,
         "offset": offset,
         "limit": limit,
         "list": result
@@ -162,11 +189,21 @@ def check_rate_limit(client_ip):
 def handle_verify(body):
     auth_code = body.get("auth_code")
     machine_code = body.get("machine_code")
+    client_type = body.get("client_type")
+    plugin_version = body.get("plugin_version")
     
-    if not auth_code or not machine_code:
+    if not auth_code or not machine_code or not client_type or not plugin_version:
         return {
             "status": "invalid",
-            "message": "缺少必填参数 auth_code 或 machine_code",
+            "message": "缺少必填参数 auth_code / machine_code / client_type / plugin_version",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "invalid",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
             "data": None
         }
     
@@ -251,9 +288,9 @@ def handle_verify(body):
             init_db()
             conn = get_db_connection()
             cursor = conn.cursor()
-            # 查找当前设备已绑定的其他激活码
-            cursor.execute("SELECT expiry_date FROM activation_codes WHERE machine_code = ? AND auth_code != ? AND expiry_date IS NOT NULL", 
-                         (machine_code, auth_code))
+            # 查找当前设备+客户端已绑定的其他激活码
+            cursor.execute("SELECT expiry_date FROM activation_codes WHERE machine_code = ? AND client_type = ? AND auth_code != ? AND expiry_date IS NOT NULL", 
+                         (machine_code, client_type, auth_code))
             rows = cursor.fetchall()
             conn.close()
             
@@ -324,11 +361,20 @@ def handle_generate(body):
     duration = body.get("duration")
     count = body.get("count", 1)
     package_type = body.get("package_type")
+    client_type = body.get("client_type")
     
-    if duration is None or not package_type:
+    if duration is None or not package_type or not client_type:
         return {
             "status": "error",
-            "message": "缺少必填参数 duration 或 package_type",
+            "message": "缺少必填参数 duration 或 package_type 或 client_type",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "error",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
             "data": None
         }
     
@@ -353,6 +399,7 @@ def handle_generate(body):
             "auth_code": auth_code,
             "duration": duration,
             "package_type": package_type,
+            "client_type": client_type,
             "generate_date": generate_date,
             "activated_date": None,
             "machine_code": None,
@@ -373,6 +420,7 @@ def handle_generate(body):
         "data": {
             "auth_codes": auth_codes,
             "duration": duration,
+            "client_type": client_type,
             "generate_date": generate_date
         }
     }
@@ -382,9 +430,10 @@ def handle_list(body):
     offset = body.get("offset", 0)
     limit = body.get("limit", 20)
     status = body.get("status")  # activated / unused / expired
+    client_type = body.get("client_type")  # 按客户端类型筛选
     
     try:
-        result = list_activation_codes(offset, limit, status)
+        result = list_activation_codes(offset, limit, status, client_type)
         return {
             "status": "success",
             "message": "获取列表成功",
@@ -540,11 +589,21 @@ def handle_device_info(body):
     如果一个设备绑定了多个激活码，返回最新激活且未过期的那个
     """
     machine_code = body.get("machine_code")
+    client_type = body.get("client_type")
+    plugin_version = body.get("plugin_version")
     
-    if not machine_code:
+    if not machine_code or not client_type or not plugin_version:
         return {
             "status": "error",
-            "message": "缺少必填参数 machine_code",
+            "message": "缺少必填参数 machine_code / client_type / plugin_version",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "error",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
             "data": None
         }
     
@@ -552,8 +611,8 @@ def handle_device_info(body):
         init_db()
         conn = get_db_connection()
         cursor = conn.cursor()
-        # 按激活时间倒序，返回最新的
-        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ? ORDER BY activated_date DESC", (machine_code,))
+        # 按激活时间倒序，返回最新的（按machine_code + client_type过滤）
+        cursor.execute("SELECT * FROM activation_codes WHERE machine_code = ? AND client_type = ? ORDER BY activated_date DESC", (machine_code, client_type))
         rows = cursor.fetchall()
         conn.close()
         
@@ -670,6 +729,7 @@ def handle_device_info(body):
         
         result = {
             "machine_code": info["machine_code"],
+            "client_type": client_type,
             "is_active": is_active and not expired,
             "auth_code": info["auth_code"],
             "package_type": info.get("package_type"),
@@ -702,6 +762,7 @@ def handle_device_list(body):
     """
     is_active = body.get("is_active")
     expired = body.get("expired")
+    client_type = body.get("client_type")
     page = body.get("page", 1)
     page_size = body.get("page_size", 20)
     offset = (page - 1) * page_size
@@ -711,9 +772,20 @@ def handle_device_list(body):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 简单实现，先查询所有再过滤
-        cursor.execute("SELECT * FROM activation_codes WHERE machine_code IS NOT NULL ORDER BY activated_date DESC LIMIT ? OFFSET ?", 
-                      (page_size + 1, offset))
+        # 构建查询条件
+        conditions = ["machine_code IS NOT NULL"]
+        params = []
+        
+        if client_type:
+            conditions.append("client_type = ?")
+            params.append(client_type)
+        
+        where_clause = " WHERE " + " AND ".join(conditions) if len(conditions) > 0 else ""
+        
+        sql = f"SELECT * FROM activation_codes {where_clause} ORDER BY activated_date DESC LIMIT ? OFFSET ?"
+        params.extend([page_size + 1, offset])
+        
+        cursor.execute(sql, params)
         rows = cursor.fetchall()
         result_list = [dict(row) for row in rows]
         
@@ -772,12 +844,21 @@ def handle_device_unbind(body):
     解除设备与激活码的绑定，使激活码可以重新绑定
     """
     machine_code = body.get("machine_code")
+    client_type = body.get("client_type")
     auth_code = body.get("auth_code")
     
-    if not machine_code:
+    if not machine_code or not client_type:
         return {
             "status": "error",
-            "message": "缺少必填参数 machine_code",
+            "message": "缺少必填参数 machine_code / client_type",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "error",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
             "data": None
         }
     
@@ -787,7 +868,7 @@ def handle_device_unbind(body):
             init_db()
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ?", (machine_code,))
+            cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ? AND client_type = ?", (machine_code, client_type))
             row = cursor.fetchone()
             if not row:
                 conn.close()
@@ -832,11 +913,20 @@ def handle_device_delete(body):
     删除设备记录（解绑并清除记录）
     """
     machine_code = body.get("machine_code")
+    client_type = body.get("client_type")
     
-    if not machine_code:
+    if not machine_code or not client_type:
         return {
             "status": "error",
-            "message": "缺少必填参数 machine_code",
+            "message": "缺少必填参数 machine_code / client_type",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "error",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
             "data": None
         }
     
@@ -844,7 +934,7 @@ def handle_device_delete(body):
         init_db()
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ?", (machine_code,))
+        cursor.execute("SELECT auth_code FROM activation_codes WHERE machine_code = ? AND client_type = ?", (machine_code, client_type))
         row = cursor.fetchone()
         
         if not row:
