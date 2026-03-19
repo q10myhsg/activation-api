@@ -12,12 +12,20 @@ from datetime import datetime, timedelta
 import traceback
 
 # -------------------------- 配置 --------------------------
+# API Key 三级权限配置
+# CLIENT_API_KEYS: 客户端API Key，多个用逗号分隔
+# ADMIN_API_KEY: 管理端API Key，仅管理员使用
 CONFIG = {
-    "api_key": os.environ.get("API_KEY", "your-secret-api-key-here"),
+    "admin_api_key": os.environ.get("ADMIN_API_KEY", ""),
+    "client_api_keys": [k.strip() for k in os.environ.get("CLIENT_API_KEYS", "").split(",") if k.strip()],
     "encryption_key": os.environ.get("ENCRYPTION_KEY", "your-encryption-secret-key").encode('utf-8'),
     "rate_limit": int(os.environ.get("RATE_LIMIT", "60")),
     "db_path": os.environ.get("DB_PATH", "/tmp/activation.db"),
 }
+
+# 开发环境兼容，如果没配置客户端Key，默认允许test
+if len(CONFIG["client_api_keys"]) == 0:
+    CONFIG["client_api_keys"] = ["test"]
 
 # -------------------------- 数据存储 --------------------------
 db_initialized = False
@@ -31,19 +39,43 @@ def init_db():
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            auth_code TEXT PRIMARY KEY,
-            duration INTEGER NOT NULL,
-            package_type TEXT NOT NULL,
-            client_type TEXT NOT NULL,
-            generate_date TEXT NOT NULL,
-            activated_date TEXT,
-            machine_code TEXT,
-            expiry_date TEXT
-        )
-    ''')
-    conn.commit()
+    
+    # 检查是否已经有表，并且检查是否有client_type列
+    cursor.execute("PRAGMA table_info(activation_codes)")
+    columns = cursor.fetchall()
+    has_client_type = any(col[1] == 'client_type' for col in columns)
+    
+    if not has_client_type:
+        # 旧表没有client_type列，需要重建
+        # 重命名旧表
+        cursor.execute("ALTER TABLE activation_codes RENAME TO activation_codes_old")
+        # 创建新表
+        cursor.execute('''
+            CREATE TABLE activation_codes (
+                auth_code TEXT PRIMARY KEY,
+                duration INTEGER NOT NULL,
+                package_type TEXT NOT NULL,
+                client_type TEXT NOT NULL,
+                generate_date TEXT NOT NULL,
+                activated_date TEXT,
+                machine_code TEXT,
+                expiry_date TEXT
+            )
+        ''')
+        # 复制数据，client_type设为空字符串（向后兼容）
+        cursor.execute('''
+            INSERT INTO activation_codes 
+            (auth_code, duration, package_type, client_type, generate_date, activated_date, machine_code, expiry_date)
+            SELECT auth_code, duration, package_type, '', generate_date, activated_date, machine_code, expiry_date
+            FROM activation_codes_old
+        ''')
+        # 删除旧表
+        cursor.execute("DROP TABLE activation_codes_old")
+        conn.commit()
+    else:
+        # 已经有client_type列，不需要做任何事
+        pass
+    
     conn.close()
     db_initialized = True
 
@@ -143,6 +175,29 @@ def list_activation_codes(offset=0, limit=20, status=None, client_type=None):
         "limit": limit,
         "list": result
     }
+
+# -------------------------- API Key 验证 --------------------------
+def verify_api_key(request_api_key):
+    """Verify API key and return role
+    Returns:
+        (role, is_valid)
+        role: "admin" / "client" / None
+        is_valid: bool
+    """
+    if not request_api_key:
+        return None, False
+    
+    request_api_key = request_api_key.strip()
+    
+    # 检查管理端
+    if request_api_key == CONFIG["admin_api_key"]:
+        return "admin", True
+    
+    # 检查客户端
+    if request_api_key in CONFIG["client_api_keys"]:
+        return "client", True
+    
+    return None, False
 
 # -------------------------- 加密/随机生成 --------------------------
 def generate_random_code(length=20):
@@ -1031,7 +1086,9 @@ def main_handler(event, context):
     if not request_api_key:
         request_api_key = event.get("queryString", {}).get("apiKey", 
                         body.get("apiKey"))
-    if request_api_key != CONFIG["api_key"]:
+    
+    role, valid = verify_api_key(request_api_key)
+    if not valid:
         return {
             "statusCode": 401,
             "headers": headers,
@@ -1039,32 +1096,72 @@ def main_handler(event, context):
                 "status": "error",
                 "message": "API Key 无效",
                 "data": None
-            })
+            }, ensure_ascii=False)
         }
     
     try:
         path = event.get("path", "")
         result = None
         
+        # 权限检查：管理接口需要admin role
+        def requires_admin():
+            if role != "admin":
+                return {
+                    "statusCode": 403,
+                    "headers": headers,
+                    "body": json.dumps({
+                        "status": "error",
+                        "message": "Forbidden: this endpoint requires admin role",
+                        "data": None
+                    }, ensure_ascii=False)
+                }
+            return None
+        
         if path.endswith("/auth/verify") and http_method == "POST":
+            # 允许client/admin访问
             result = handle_verify(body)
         elif path.endswith("/auth/generate") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_generate(body)
         elif path.endswith("/auth/info") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_auth_info(body)
         elif path.endswith("/auth/list") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_list(body)
         elif path.endswith("/auth/delete") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_delete(body)
         elif path.endswith("/auth/update") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_update(body)
         elif path.endswith("/device/info") and http_method == "POST":
+            # 允许client/admin访问
             result = handle_device_info(body)
         elif path.endswith("/device/list") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_device_list(body)
         elif path.endswith("/device/unbind") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_device_unbind(body)
         elif path.endswith("/device/delete") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
             result = handle_device_delete(body)
         else:
             return {
