@@ -11,7 +11,7 @@
 
 ## 快速开始
 
-最终可运行代码在 [`tencent-cloud-scf-activation-sqlite/](./tencent-cloud-scf-activation-sqlite/ 目录下，请看 [README](./tencent-cloud-scf-activation-sqlite/README.md) 有完整部署文档。
+最终可运行代码在 [`xhs_helper_admin/`](./xhs_helper_admin/ 目录下，请看 [README](./xhs_helper_admin/README.md) 有完整部署文档。
 
 ## 功能列表
 
@@ -22,10 +22,11 @@
 | 列出所有激活码 | 分页查询，支持过滤已激活/未激活 |
 | 删除激活码 | 管理端删除 |
 | 更新激活码 | 支持延期、修改套餐类型 |
+| **动态权限管理** | 可通过接口管理套餐权限配额，无需改代码重新发布 |
 
 ## 接口文档
 
-完整接口文档请参考 [这里](./tencent-cloud-scf-activation-sqlite/README.md#接口说明)
+完整接口文档请参考 [这里](./docs/接口协议.md)
 
 ## 部署
 
@@ -33,12 +34,12 @@
 
 1. 在腾讯云创建Python 云函数，北京地域，Python 3.9
 2. 打包代码上传
-3. 配置环境变量 `API_KEY`、`ENCRYPTION_KEY`
+3. 配置环境变量 `ADMIN_API_KEY`、`CLIENT_API_KEYS`
 4. **关闭日志服务**，避免额外收费
 5. 如需持久化，挂载CFS文件系统，修改 `DB_PATH` 指向CFS挂载路径
 6. 添加API网关触发器
 
-详细说明见 [这里](./tencent-cloud-scf-activation-sqlite/README.md)
+详细说明见 [这里](./xhs_helper_admin/README.md)
 
 ## 开发经验
 
