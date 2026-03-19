@@ -1,0 +1,6 @@
+[submodule "activation-admin"]
+	path = activation-admin
+	url = https://github.com/q10myhsg/activation-admin.git
+[submodule "xhs_helper_browser_extension"]
+	path = xhs_helper_browser_extension
+	url = https://github.com/q10myhsg/xhs_helper_browser_extension.git
