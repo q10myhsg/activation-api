@@ -71,6 +71,68 @@ def init_db():
     else:
         # 已经有client_type列，不需要做任何事
         pass
+
+    # 检查并创建 package_permissions 表（存储可配置的权限）
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='package_permissions'");
+    table_exists = cursor.fetchone() is not None
+    if not table_exists:
+        cursor.execute('''
+            CREATE TABLE package_permissions (
+                client_type TEXT NOT NULL,
+                package_type TEXT NOT NULL,
+                permissions_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (client_type, package_type)
+            )
+        ''')
+        # 插入默认权限配置
+        now = datetime.utcnow().isoformat()
+        # 默认权限配置
+        default_permissions = {
+            "browser-extension": {
+                "basic": {
+                    "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
+                    "download": {"daily_limit": 20},
+                    "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
+                },
+                "premium": {
+                    "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
+                    "download": {"daily_limit": 20},
+                    "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
+                },
+                "vip": {
+                    "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
+                    "download": {"daily_limit": 50},
+                    "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
+                }
+            },
+            "pc-client": {
+                "basic": {
+                    "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
+                    "download": {"daily_limit": 30},
+                    "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                },
+                "premium": {
+                    "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
+                    "download": {"daily_limit": 50},
+                    "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
+                },
+                "vip": {
+                    "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
+                    "download": {"daily_limit": 100},
+                    "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
+                }
+            }
+        }
+        for client_type, packages in default_permissions.items():
+            for package_type, permissions in packages.items():
+                cursor.execute('''
+                    INSERT INTO package_permissions 
+                    (client_type, package_type, permissions_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (client_type, package_type, json.dumps(permissions), now, now))
+        conn.commit()
     
     conn.close()
     db_initialized = True
@@ -171,6 +233,87 @@ def list_activation_codes(offset=0, limit=20, status=None, client_type=None):
         "limit": limit,
         "list": result
     }
+
+# -------------------------- 权限配置管理 --------------------------
+def get_package_permission(client_type, package_type):
+    """Get permission configuration for (client_type, package_type)
+    Returns None if not configured in database
+    """
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM package_permissions WHERE client_type = ? AND package_type = ?", (client_type, package_type))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    try:
+        info = dict(row)
+        permissions = json.loads(info["permissions_json"])
+        return permissions
+    except Exception:
+        return None
+
+def list_package_permissions():
+    """List all permission configurations"""
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM package_permissions ORDER BY client_type, package_type")
+    rows = cursor.fetchall()
+    result = []
+    for row in rows:
+        info = dict(row)
+        try:
+            info["permissions"] = json.loads(info["permissions_json"])
+            del info["permissions_json"]
+        except Exception:
+            info["permissions"] = None
+        result.append(info)
+    conn.close()
+    return result
+
+def set_package_permission(client_type, package_type, permissions):
+    """Set or update permission configuration"""
+    init_db()
+    now = datetime.utcnow().isoformat()
+    permissions_json = json.dumps(permissions)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Check if exists
+    cursor.execute("SELECT 1 FROM package_permissions WHERE client_type = ? AND package_type = ?", (client_type, package_type))
+    exists = cursor.fetchone() is not None
+    
+    if exists:
+        # Update
+        cursor.execute('''
+            UPDATE package_permissions 
+            SET permissions_json = ?, updated_at = ?
+            WHERE client_type = ? AND package_type = ?
+        ''', (permissions_json, now, client_type, package_type))
+    else:
+        # Insert
+        cursor.execute('''
+            INSERT INTO package_permissions 
+            (client_type, package_type, permissions_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (client_type, package_type, permissions_json, now, now))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_package_permission(client_type, package_type):
+    """Delete permission configuration"""
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM package_permissions WHERE client_type = ? AND package_type = ?", (client_type, package_type))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
 
 # -------------------------- API Key 验证 --------------------------
 def verify_api_key(request_api_key):
@@ -717,131 +860,72 @@ def handle_device_info(body):
         
         first_activation = info.get("activated_date") is None or info.get("last_verify_time") is None
         
-        # 权限配置：[client_type][package_type] -> 权限JSON
-        # 支持任意扩展，增减套餐和修改配额只需要改这个配置表
-        PERMISSION_CONFIG = {
-            "browser-extension": {
-                "basic": {
-                    "prompt_word": {
-                        "daily_limit": 20,
-                        "enable_like_filter": True
-                    },
-                    "download": {
-                        "daily_limit": 20
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 30
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 10
-                        }
-                    }
-                },
-                "premium": {
-                    "prompt_word": {
-                        "daily_limit": 50,
-                        "enable_like_filter": False
-                    },
-                    "download": {
-                        "daily_limit": 20
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 100
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 50
-                        }
-                    }
-                },
-                "vip": {
-                    # 在此定义vip更高权限
-                    "prompt_word": {
-                        "daily_limit": 100,
-                        "enable_like_filter": False
-                    },
-                    "download": {
-                        "daily_limit": 50
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 200
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 100
-                        }
-                    }
-                }
+        # 默认权限（未激活）
+        permissions = {
+            "prompt_word": {
+                "daily_limit": 20,
+                "enable_like_filter": True
             },
-            "pc-client": {
-                "basic": {
-                    "prompt_word": {
-                        "daily_limit": 30,
-                        "enable_like_filter": True
-                    },
-                    "download": {
-                        "daily_limit": 30
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 50
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 20
-                        }
-                    }
+            "download": {
+                "daily_limit": 20
+            },
+            "search": {
+                "high_value_notes": {
+                    "daily_limit": 30
                 },
-                "premium": {
-                    "prompt_word": {
-                        "daily_limit": 80,
-                        "enable_like_filter": False
-                    },
-                    "download": {
-                        "daily_limit": 50
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 150
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 80
-                        }
-                    }
-                },
-                "vip": {
-                    # 在此定义vip更高权限
-                    "prompt_word": {
-                        "daily_limit": 150,
-                        "enable_like_filter": False
-                    },
-                    "download": {
-                        "daily_limit": 100
-                    },
-                    "search": {
-                        "high_value_notes": {
-                            "daily_limit": 300
-                        },
-                        "keyword_expansion": {
-                            "daily_limit": 150
-                        }
-                    }
+                "keyword_expansion": {
+                    "daily_limit": 10
                 }
             }
         }
-
-        # 默认权限（未激活）
-        permissions = PERMISSION_CONFIG["browser-extension"]["basic"]
         
         if is_active and not expired and info:
-            # 已激活，根据 client_type + package_type 获取权限
+            # 已激活，根据 client_type + package_type 从数据库获取权限
             package_type = info.get("package_type", "basic")
-            ct = client_type  # client_type
-            # 如果配置里没有这个套餐或者客户端，fallback到basic
-            if ct in PERMISSION_CONFIG and package_type in PERMISSION_CONFIG[ct]:
-                permissions = PERMISSION_CONFIG[ct][package_type]
+            ct = client_type
+            db_permissions = get_package_permission(ct, package_type)
+            if db_permissions is not None:
+                permissions = db_permissions
             else:
-                permissions = PERMISSION_CONFIG["browser-extension"]["basic"]
+                # 如果数据库没有配置，fallback到默认值
+                if ct == "browser-extension":
+                    if package_type == "basic":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
+                            "download": {"daily_limit": 20},
+                            "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
+                        }
+                    elif package_type == "premium":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
+                            "download": {"daily_limit": 20},
+                            "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
+                        }
+                    elif package_type == "vip":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
+                            "download": {"daily_limit": 50},
+                            "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
+                        }
+                elif ct == "pc-client":
+                    if package_type == "basic":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
+                            "download": {"daily_limit": 30},
+                            "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                        }
+                    elif package_type == "premium":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
+                            "download": {"daily_limit": 50},
+                            "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
+                        }
+                    elif package_type == "vip":
+                        permissions = {
+                            "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
+                            "download": {"daily_limit": 100},
+                            "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
+                        }
         
         result = {
             "machine_code": info["machine_code"],
@@ -1089,6 +1173,115 @@ def handle_device_delete(body):
             }
         }
 
+def handle_permissions_list(body):
+    """列出所有权限配置（管理接口）"""
+    try:
+        result = list_package_permissions()
+        return {
+            "status": "success",
+            "message": "获取列表成功",
+            "data": {
+                "total": len(result),
+                "items": result
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"获取列表失败: {str(e)}",
+            "data": None
+        }
+
+def handle_permissions_set(body):
+    """设置或更新权限配置（管理接口）
+    
+    请求参数:
+    - client_type: string - 客户端类型
+    - package_type: string - 套餐类型
+    - permissions: object - 完整权限配置JSON
+    """
+    client_type = body.get("client_type")
+    package_type = body.get("package_type")
+    permissions = body.get("permissions")
+    
+    if not client_type or not package_type or not permissions:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 client_type / package_type / permissions",
+            "data": None
+        }
+    
+    # 验证 client_type 有效值
+    if client_type not in ["browser-extension", "pc-client"]:
+        return {
+            "status": "error",
+            "message": "client_type 必须是 'browser-extension' 或 'pc-client'",
+            "data": None
+        }
+    
+    try:
+        set_package_permission(client_type, package_type, permissions)
+        return {
+            "status": "success",
+            "message": "权限配置更新成功",
+            "data": {
+                "client_type": client_type,
+                "package_type": package_type,
+                "permissions": permissions
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"更新失败: {str(e)}",
+            "data": None
+        }
+
+def handle_permissions_delete(body):
+    """删除权限配置（管理接口）
+    
+    请求参数:
+    - client_type: string - 客户端类型
+    - package_type: string - 套餐类型
+    """
+    client_type = body.get("client_type")
+    package_type = body.get("package_type")
+    
+    if not client_type or not package_type:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 client_type / package_type",
+            "data": None
+        }
+    
+    try:
+        deleted = delete_package_permission(client_type, package_type)
+        if deleted:
+            return {
+                "status": "success",
+                "message": "删除成功",
+                "data": {
+                    "deleted": True
+                }
+            }
+        else:
+            return {
+                "status": "success",
+                "message": "配置不存在，无需删除",
+                "data": {
+                    "deleted": False
+                }
+            }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"删除失败: {str(e)}",
+            "data": None
+        }
+
 # -------------------------- 主入口 --------------------------
 def main_handler(event, context):
     headers = {
@@ -1236,6 +1429,21 @@ def main_handler(event, context):
             if check:
                 return check
             result = handle_device_delete(body)
+        elif path.endswith("/permissions/list") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
+            result = handle_permissions_list(body)
+        elif path.endswith("/permissions/set") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
+            result = handle_permissions_set(body)
+        elif path.endswith("/permissions/delete") and http_method == "POST":
+            check = requires_admin()
+            if check:
+                return check
+            result = handle_permissions_delete(body)
         else:
             return {
                 "statusCode": 404,
