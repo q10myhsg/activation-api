@@ -1,0 +1,3 @@
+[submodule "activation-admin"]
+	path = activation-admin
+	url = https://github.com/q10myhsg/activation-admin.git
