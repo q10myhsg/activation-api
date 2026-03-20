@@ -5,6 +5,7 @@ import time
 import os
 import sqlite3
 import secrets
+import base64
 from datetime import datetime, timedelta
 import traceback
 
@@ -350,6 +351,7 @@ def check_rate_limit(client_ip):
     window_start = now - 60
     if client_ip not in rate_limit_requests:
         rate_limit_requests[client_ip] = []
+    # 清理60秒前的过期记录，防止内存增长
     requests = [t for t in rate_limit_requests[client_ip] if t > window_start]
     if len(requests) >= CONFIG["rate_limit"]:
         return False
@@ -532,6 +534,7 @@ def handle_verify(body):
 def handle_generate(body):
     duration = body.get("duration")
     count = body.get("count", 1)
+    count = min(max(1, count), 100)  # 限制一次最多生成100个，防止恶意打爆数据库
     package_type = body.get("package_type")
     client_type = body.get("client_type")
     
@@ -1341,11 +1344,18 @@ def main_handler(event, context):
         request_api_key = event.get("queryString", {}).get("apiKey", 
                         body.get("apiKey"))
     
-    # 调试：打印配置信息，方便排查
-    print(f"ADMIN_API_KEY from env: '{os.environ.get('ADMIN_API_KEY', '')}'")
-    print(f"CLIENT_API_KEYS from env: '{os.environ.get('CLIENT_API_KEYS', '')}'")
-    print(f"CONFIG client_api_keys: {CONFIG['client_api_keys']}")
-    print(f"Request API Key: '{request_api_key}'")
+    # 调试：打印配置信息，方便排查（不打印完整API Key）
+    def mask_api_key(key):
+        if not key:
+            return ''
+        if len(key) <= 8:
+            return '*' * len(key)
+        return key[:4] + '...' + key[-4:]
+    
+    print(f"ADMIN_API_KEY configured: {len(CONFIG['admin_api_key']) > 0}")
+    print(f"CLIENT_API_KEYS count: {len(CONFIG['client_api_keys'])}")
+    if request_api_key:
+        print(f"Request API Key: {mask_api_key(request_api_key)}")
     
     role, valid = verify_api_key(request_api_key)
     if not valid:
@@ -1357,9 +1367,7 @@ def main_handler(event, context):
                 "message": "API Key 无效",
                 "debug": {
                     "admin_api_key_configured": len(CONFIG["admin_api_key"]) > 0,
-                    "client_api_keys_count": len(CONFIG["client_api_keys"]),
-                    "client_api_keys": CONFIG["client_api_keys"],
-                    "request_api_key": request_api_key
+                    "client_api_keys_count": len(CONFIG["client_api_keys"])
                 },
                 "data": None
             }, ensure_ascii=False)
