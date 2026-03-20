@@ -9,16 +9,17 @@
 项目：小红书 PC 客户端自动化养号工具
 - 核心功能：多设备自动化养号，提升账号存活率
 - 商业化：分级授权收费，免费用户体验 + 付费用户解锁更多额度
+- 新增：笔记创建导出分享功能
 
 ---
 
 ## 2. 权限分级设计
 
-| 套餐 | 价格 | 可接入设备数 | 每日总养时长限制 | 笔记创建 |
-|------|------|-------------|------------------|----------|
-| **免费版** | 0 元 | ✅ 可接入**多个设备** | ⚠️ 每日**累计 30 分钟**（所有设备合计） | ❌ 暂不支持 |
-| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日**累计 120 分钟**（2 小时） | ❌ 暂不支持 |
-| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数无限制** | ✅ **时长无限制** | ❌ 暂不支持（后续开放） |
+| 套餐 | 价格 | 可接入设备数 | 每日总养时长限制 | 笔记创建 | 导出分享 |
+|------|------|-------------|------------------|----------|----------|
+| **免费版** | 0 元 | ✅ 可接入**多个设备** | ⚠️ 每日**累计 30 分钟**（所有设备合计） | ❌ 不支持 | ❌ 不支持 |
+| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日**累计 120 分钟**（2 小时） | ✅ 支持 | ✅ 支持 |
+| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数无限制** | ✅ **时长无限制** | ✅ 支持 | ✅ 支持 |
 
 ### 设计说明
 
@@ -29,7 +30,26 @@
 
 2. **梯度设计**：
    - 免费 → 基础 → 高级，满足不同用户规模
+   - 笔记创建+导出分享作为增值功能，只开放给付费用户，促进升级
    - 个人用户够用，多账号用户不限设备时长，价格梯度合理
+
+---
+
+## 3. 新增功能设计（笔记导出分享）
+
+### 功能需求
+
+| 序号 | 功能 | 说明 |
+|------|------|------|
+| 1 | **文件夹传文件到手机** | 创作完成笔记后，整个文件夹直接传输到手机，方便用户在小红书 App 发帖时选择图片文件 |
+| 2 | **PDF → 图片** | 生成的笔记 PDF 自动转换为图片格式，适合小红书上传 |
+| 3 | **图片上传百度云** | 自动上传图片到百度云，生成分享链接，用户直接复制使用 |
+
+### 技术实现要点
+
+1. **文件传输到手机**：利用 `uiautomator2` 本身的推送文件能力，直接推送到设备存储空间
+2. **PDF 转图片**：使用 `pdf2image` 库转换，一页 PDF 转一张图片
+3. **百度云上传**：调用百度云 API 上传，获取分享链接返回给用户
 
 ---
 
@@ -37,7 +57,7 @@
 
 ### ⚠️ 重要：所有套餐参数**不本地写死**，全部从云端获取
 
-- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_minutes` / `package_type` / `expire_date`
+- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_minutes` / `package_type` / `expire_date` / 功能权限
 - 本地只做缓存，不从新 hardcode
 - 方便后台随时调整套餐配置，不需要客户端发版
 
@@ -48,11 +68,11 @@
 ### 4.1 启动前权限检查流程
 
 ```python
-def check_can_start(device_id):
+def check_can_start(device_id, planned_duration):
     # 1. 检查授权是否有效（从本地缓存读取）
     license = get_user_license()
     if not license or not license.active or is_expired(license.expire_date):
-        return False, "授权已过期，请重新激活"
+        return False, "授权已过期，请重新激活", 0
     
     # 2. 从license 获取套餐配置（云端返回的，本地缓存）
     max_devices = license.max_devices
@@ -60,19 +80,36 @@ def check_can_start(device_id):
     
     # 3. 检查设备数量
     registered_devices = get_all_registered_devices()
-    if len(registered_devices) > max_devices:
-        return False, f"已达到最大设备数限制({max_devices})，请升级套餐"
+    if max_devices != -1 and len(registered_devices) > max_devices:
+        return False, f"已达到最大设备数限制({max_devices})，请升级套餐", 0
     
     # 4. 检查今日累计时长
-    today = get_today_str()
-    usage = get_daily_usage(device_id, today)
-    used_minutes = usage.total_minutes if usage else 0
+    total_used = get_total_daily_usage_all_devices()
     
-    if used_minutes >= max_daily_minutes:
-        return False, f"今日已累计使用 {used_minutes} 分钟，达到今日限额，请明天再来或升级套餐"
+    # max_daily_minutes = -1 表示不限
+    if max_daily_minutes == -1:
+        # 不限时长，直接允许，实际就是计划时长
+        return True, "可以启动", planned_duration
     
-    # 5. 检查通过，可以启动
-    return True, "可以启动"
+    remaining = max_daily_minutes - total_used
+    
+    if remaining <= 0:
+        return False, f"今日已累计使用 {total_used} 分钟，达到今日限额({max_daily_minutes} 分钟)，请明天再来或升级套餐", 0
+    
+    actual_duration = planned_duration
+    message = ""
+    
+    if planned_duration > remaining:
+        # 计划超过剩余，允许启动但只用剩余，提示用户
+        actual_duration = remaining
+        message = (f"⚠️ 今日剩余额度仅 {remaining} 分钟，"
+                   f"你计划养号 {planned_duration} 分钟，本次将只运行 {remaining} 分钟后自动停止")
+    
+    # 有剩余就允许启动，不管计划
+    if message:
+        return True, message, actual_duration
+    else:
+        return True, "可以启动", actual_duration
 ```
 
 ### 4.2 使用时长统计
@@ -92,7 +129,7 @@ update_daily_usage(device_id, get_today(), used_minutes)
 
 1. 用户在 Web 界面输入激活码
 2. 客户端请求激活码 API 到 `activation-api` 验证
-3. **验证返回完整套餐配置**：`max_devices` / `max_daily_minutes` / `expire_date` / `package_type`
+3. **验证返回完整套餐配置**：`max_devices` / `max_daily_minutes` / `expire_date` / `package_type` / 功能权限
 4. 验证通过后，绑定本机机器码，**写入本地数据库缓存**，开通对应套餐权限
 5. 每日启动需要联网验证一次授权状态，更新缓存配置
 
@@ -113,7 +150,8 @@ update_daily_usage(device_id, get_today(), used_minutes)
 {
   "auth_code": "xxxx-xxxx-xxxx",
   "machine_code": "client-pc-xxxxxxx",
-  "client_type": "pc-client"
+  "client_type": "pc-client",
+  "plugin_version": "1.0.0"
 }
 ```
 
@@ -123,9 +161,13 @@ update_daily_usage(device_id, get_today(), used_minutes)
   "status": "valid",
   "data": {
     "package_type": "basic",
-    "expire_date": "2026-04-20",
+    "expiry_date": "2026-04-20T23:59:59Z",
     "max_devices": 2,
-    "max_daily_minutes": 120
+    "max_daily_minutes": 120,
+    "permissions": {
+      "note_create": true,
+      "export_share": true
+    }
   }
 }
 ```
@@ -133,6 +175,7 @@ update_daily_usage(device_id, get_today(), used_minutes)
 **关键点：**
 - 所有套餐限制参数都通过接口返回，**本地不写死**
 - 增加 `client_type: "pc-client"` 区分客户端类型
+- 增加 `permissions` 字段控制功能权限（笔记创建、导出分享）
 - 云端统一控制，方便调整
 
 ---
@@ -168,9 +211,9 @@ CREATE TABLE user_license (
     activation_code TEXT UNIQUE NOT NULL,
     machine_code TEXT UNIQUE,        -- 绑定本机机器码
     package_type TEXT NOT NULL,       -- free / basic / premium
-    expire_date TEXT NOT NULL,        -- 过期日期
-    max_devices INTEGER NOT NULL,      -- 最大设备数（从云端获取）
-    max_daily_minutes INTEGER NOT NULL, -- 最大每日时长（从云端获取）
+    expire_date TEXT,                -- 过期日期
+    max_devices INTEGER NOT NULL,      -- 最大设备数（从云端获取，-1=不限）
+    max_daily_minutes INTEGER NOT NULL, -- 最大每日时长（从云端获取，-1=不限）
     create_time TEXT NOT NULL,
     update_time TEXT NOT NULL,
     active BOOLEAN DEFAULT 1
@@ -184,12 +227,16 @@ CREATE TABLE user_license (
 ### 激活页面
 - 输入激活码输入框
 - 激活按钮
-- 显示当前套餐信息：套餐类型、过期时间、**套餐额度配置**
-- 显示今日总已使用时长
+- 显示当前套餐信息：套餐类型、过期时间、最大设备数、最大每日分钟数、今日已用分钟数
+- 显示今日总已使用时长、剩余时长
 
 ### 设备列表
 - 显示所有已接入设备
 - 显示每个设备今日已用时长
+
+### 导航栏
+原来的导航增加「授权」标签，顺序：
+`主页 → 设备管理 → 关键词 → 授权 → 配置`
 
 ---
 
@@ -295,14 +342,10 @@ DEFAULT_FREE_LICENSE = {
    - 最大设备数
    - 最大每日分钟数
    - 今日已用分钟数
+   - 今日剩余分钟数
 4. **设备列表**
    - 设备名称
    - 今日已用时长
-   - 剩余时长
-
-#### 导航栏
-原来的导航增加「授权」标签，顺序：
-`主页 → 设备管理 → 关键词 → 授权 → 配置`
 
 ---
 
@@ -319,5 +362,7 @@ DEFAULT_FREE_LICENSE = {
 | API 接口设计 | ✅ 完成 |
 | 前端界面设计要点 | ✅ 完成 |
 | 复用现有激活码体系 | ✅ 完成 |
+| **新增笔记导出分享功能设计** | ✅ 完成 |
+| **商业分级策略更新** | ✅ 完成 |
 
 服务端开发可以按照这个设计进行开发联调 👍
