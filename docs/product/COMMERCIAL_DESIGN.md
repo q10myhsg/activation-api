@@ -15,22 +15,23 @@
 
 ## 2. 权限分级设计
 
-| 套餐 | 价格 | 可接入设备数 | 每日总养时长限制 | 笔记创建 | 导出分享 |
-|------|------|-------------|------------------|----------|----------|
-| **免费版** | 0 元 | ✅ 可接入**多个设备** | ⚠️ 每日**累计 30 分钟**（所有设备合计） | ❌ 不支持 | ❌ 不支持 |
-| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日**累计 120 分钟**（2 小时） | ✅ 支持 | ✅ 支持 |
-| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数无限制** | ✅ **时长无限制** | ✅ 支持 | ✅ 支持 |
+| 套餐 | 价格 | 可接入设备数 | 每日总养时长限制 | 每日内容制作次数 | 每日导出分享次数 |
+|------|------|-------------|------------------|--------------|--------------|
+| **免费版** | 0 元 | ✅ 可接入**多个设备** | ⚠️ 每日**累计 30 分钟**（所有设备合计） | 3 次 | 3 次 |
+| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日**累计 120 分钟**（2 小时） | 20 次 | 20 次 |
+| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数不限** | ✅ **时长无限制** | ✅ 不限制 | ✅ 不限制 |
 
 ### 设计说明
 
 1. **免费版策略**：
    - 允许接入多个设备，提升用户体验
-   - 限制每日总时长，不限制设备接入数量
+   - 限制每日总时长 + 每日创作次数，不限制设备接入数量
    - 满足个人小号用户日常需求，降低试用门槛
 
 2. **梯度设计**：
    - 免费 → 基础 → 高级，满足不同用户规模
-   - 笔记创建+导出分享作为增值功能，只开放给付费用户，促进升级
+   - 笔记创建+导出分享**按日次数限制**，简单直观，统计方便
+   - 次数限制作为付费点，比按月更适合日常使用频率
    - 个人用户够用，多账号用户不限设备时长，价格梯度合理
 
 ---
@@ -57,7 +58,7 @@
 
 ### ⚠️ 重要：所有套餐参数**不本地写死**，全部从云端获取
 
-- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_minutes` / `package_type` / `expire_date` / 功能权限
+- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_minutes` / `max_daily_creates` / `max_daily_exports` / `package_type` / `expire_date` / 功能权限
 - 本地只做缓存，不从新 hardcode
 - 方便后台随时调整套餐配置，不需要客户端发版
 
@@ -68,7 +69,7 @@
 ### 4.1 启动前权限检查流程
 
 ```python
-def check_can_start(device_id, planned_duration):
+def check_can_start(device_id, planned_duration, is_create=False):
     # 1. 检查授权是否有效（从本地缓存读取）
     license = get_user_license()
     if not license or not license.active or is_expired(license.expire_date):
@@ -77,13 +78,21 @@ def check_can_start(device_id, planned_duration):
     # 2. 从license 获取套餐配置（云端返回的，本地缓存）
     max_devices = license.max_devices
     max_daily_minutes = license.max_daily_minutes
+    max_daily_creates = license.max_daily_creates
+    max_daily_exports = license.max_daily_exports
     
     # 3. 检查设备数量
     registered_devices = get_all_registered_devices()
     if max_devices != -1 and len(registered_devices) > max_devices:
         return False, f"已达到最大设备数限制({max_devices})，请升级套餐", 0
     
-    # 4. 检查今日累计时长
+    # 4. 如果是内容创作，检查每日次数
+    if is_create:
+        used_creates = get_daily_create_count(get_today())
+        if max_daily_creates != -1 and used_creates >= max_daily_creates:
+            return False, f"今日已使用 {used_creates}/{max_daily_creates} 次创作次数，达到每日限额，请明天再来或升级套餐", 0
+    
+    # 5. 检查今日累计养号时长
     total_used = get_total_daily_usage_all_devices()
     
     # max_daily_minutes = -1 表示不限
@@ -102,7 +111,7 @@ def check_can_start(device_id, planned_duration):
     if planned_duration > remaining:
         # 计划超过剩余，允许启动但只用剩余，提示用户
         actual_duration = remaining
-        message = (f"⚠️ 今日剩余额度仅 {remaining} 分钟，"
+        message = (f"⚠️ 今日剩余养号额度仅 {remaining} 分钟，"
                    f"你计划养号 {planned_duration} 分钟，本次将只运行 {remaining} 分钟后自动停止")
     
     # 有剩余就允许启动，不管计划
@@ -112,32 +121,23 @@ def check_can_start(device_id, planned_duration):
         return True, "可以启动", actual_duration
 ```
 
-### 4.2 使用时长统计
+### 4.2 创作完成后统计次数
 
-养号启动后：
 ```python
-start_time = time.time()
-do_nurturing()
-end_time = time.time()
-used_minutes = int((end_time - start_time) / 60)
-if used_minutes < 1:
-    used_minutes = 1  # 最少统计 1 分钟
-update_daily_usage(device_id, get_today(), used_minutes)
+def after_create_success():
+    """创作成功后增加每日创作次数"""
+    today = get_today()
+    increment_daily_count(today, "create")
 ```
 
-### 4.3 激活码绑定流程
+### 4.3 导出完成后统计次数
 
-1. 用户在 Web 界面输入激活码
-2. 客户端请求激活码 API 到 `activation-api` 验证
-3. **验证返回完整套餐配置**：`max_devices` / `max_daily_minutes` / `expire_date` / `package_type` / 功能权限
-4. 验证通过后，绑定本机机器码，**写入本地数据库缓存**，开通对应套餐权限
-5. 每日启动需要联网验证一次授权状态，更新缓存配置
-
-### 4.4 复用现有激活码体系
-
-- 直接复用现有的 `xhs_helper_api` 激活码体系
-- **套餐信息通过接口返回**，本地不硬编码，配置灵活
-- 一套体系支撑所有产品（浏览器插件 / PC 客户端 / 未来其他客户端），不用重复开发
+```python
+def after_export_success():
+    """导出成功后增加每日导出次数"""
+    today = get_today()
+    increment_daily_count(today, "export")
+```
 
 ---
 
@@ -164,6 +164,8 @@ update_daily_usage(device_id, get_today(), used_minutes)
     "expiry_date": "2026-04-20T23:59:59Z",
     "max_devices": 2,
     "max_daily_minutes": 120,
+    "max_daily_creates": 20,
+    "max_daily_exports": 20,
     "permissions": {
       "note_create": true,
       "export_share": true
@@ -199,8 +201,10 @@ CREATE TABLE daily_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
     use_date TEXT NOT NULL,         -- 'YYYY-MM-DD'
-    total_minutes INTEGER DEFAULT 0,  -- 今日累计使用分钟
-    start_count INTEGER DEFAULT 0,      -- 今日启动次数
+    total_minutes INTEGER DEFAULT 0,  -- 今日累计养号分钟
+    start_count INTEGER DEFAULT 0,      -- 今日养号启动次数
+    create_count INTEGER DEFAULT 0,     -- 今日内容创作次数
+    export_count INTEGER DEFAULT 0,     -- 今日导出分享次数
     update_time TEXT NOT NULL,
     UNIQUE(device_id, use_date)
 );
@@ -213,7 +217,9 @@ CREATE TABLE user_license (
     package_type TEXT NOT NULL,       -- free / basic / premium
     expire_date TEXT,                -- 过期日期
     max_devices INTEGER NOT NULL,      -- 最大设备数（从云端获取，-1=不限）
-    max_daily_minutes INTEGER NOT NULL, -- 最大每日时长（从云端获取，-1=不限）
+    max_daily_minutes INTEGER NOT NULL, -- 最大每日养号时长（从云端获取，-1=不限）
+    max_daily_creates INTEGER NOT NULL, -- 最大每日内容创作次数（-1=不限）
+    max_daily_exports INTEGER NOT NULL,  -- 最大每日导出分享次数（-1=不限）
     create_time TEXT NOT NULL,
     update_time TEXT NOT NULL,
     active BOOLEAN DEFAULT 1
@@ -228,6 +234,7 @@ CREATE TABLE user_license (
 - 输入激活码输入框
 - 激活按钮
 - 显示当前套餐信息：套餐类型、过期时间、最大设备数、最大每日分钟数、今日已用分钟数
+- 显示今日创作次数、导出次数，剩余次数
 - 显示今日总已使用时长、剩余时长
 
 ### 设备列表
@@ -247,7 +254,7 @@ CREATE TABLE user_license (
 | 检查点 | 时机 | 是否联网 | 说明 |
 |------|------|----------|------|
 | **程序启动时检查** | Web 服务启动时 | ✅ 一次联网验证 | 更新本地缓存授权，过期提示重新激活 |
-| **养号启动前检查** | 每次点击启动养号时 | ❌ 不需要联网 | 使用本地缓存数据检查，高效 |
+| **养号/创作启动前检查** | 每次点击启动 | ❌ 不需要联网 | 使用本地缓存数据检查，高效 |
 
 **设计优势**
 - 避免频繁联网 → 本地检查快速，用户体验好
@@ -318,7 +325,9 @@ DEFAULT_FREE_LICENSE = {
     "package_type": "free",
     "expire_date": None,       # 永不过期（免费版永远有效）
     "max_devices": 1,         # 免费版 1 个设备
-    "max_daily_minutes": 30   # 免费版每日 30 分钟
+    "max_daily_minutes": 30,   # 免费版每日 30 分钟
+    "max_daily_creates": 3,    # 免费版每日 3 次创作
+    "max_daily_exports": 3,    # 免费版每日 3 次导出
 }
 ```
 
@@ -341,8 +350,9 @@ DEFAULT_FREE_LICENSE = {
    - 过期日期
    - 最大设备数
    - 最大每日分钟数
-   - 今日已用分钟数
-   - 今日剩余分钟数
+   - 今日已用分钟数 / 剩余分钟数
+   - 今日已用创作次数 / 剩余次数
+   - 今日已用导出次数 / 剩余次数
 4. **设备列表**
    - 设备名称
    - 今日已用时长
@@ -362,7 +372,7 @@ DEFAULT_FREE_LICENSE = {
 | API 接口设计 | ✅ 完成 |
 | 前端界面设计要点 | ✅ 完成 |
 | 复用现有激活码体系 | ✅ 完成 |
-| **新增笔记导出分享功能设计** | ✅ 完成 |
+| **新增笔记导出分享功能设计** | ✅ 完成（按日限制） |
 | **商业分级策略更新** | ✅ 完成 |
 
 服务端开发可以按照这个设计进行开发联调 👍
