@@ -15,24 +15,25 @@
 
 ## 2. 权限分级设计
 
-| 套餐 | 价格 | 可接入设备数 | 每日总养时长限制 | 每日内容制作次数 | 每日导出分享次数 |
+> **2026-03-21 更新：** PC端养号功能从时长限制改为次数限制，其他功能限制保持不变
+
+| 套餐 | 价格 | 可接入设备数 | 每日养号次数限制 | 每日内容制作次数 | 每日导出分享次数 |
 |------|------|-------------|------------------|--------------|--------------|
-| **免费版** | 0 元 | ✅ 可接入**多个设备** | ⚠️ 每日**累计 30 分钟**（所有设备合计） | 3 次 | 3 次 |
-| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日**累计 120 分钟**（2 小时） | 20 次 | 20 次 |
-| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数不限** | ✅ **时长无限制** | ✅ 不限制 | ✅ 不限制 |
+| **免费版** | 0 元 | ✅ **1 个设备** | ⚠️ 每日 **3 次** | 3 次 | 3 次 |
+| **基础版** | 19 元/月<br>199 元/年 | ✅ **2 个设备** | ✅ 每日 **10 次** | 20 次 | 20 次 |
+| **高级版** | 39 元/月<br>399 元/年 | ✅ **设备数不限** | ✅ **次数无限制** | ✅ 不限制 | ✅ 不限制 |
 
 ### 设计说明
 
 1. **免费版策略**：
-   - 允许接入多个设备，提升用户体验
-   - 限制每日总时长 + 每日创作次数，不限制设备接入数量
+   - 限制 1 个设备，降低试用门槛
+   - 限制每日养号次数 + 每日创作次数
    - 满足个人小号用户日常需求，降低试用门槛
 
 2. **梯度设计**：
    - 免费 → 基础 → 高级，满足不同用户规模
-   - 笔记创建+导出分享**按日次数限制**，简单直观，统计方便
-   - 次数限制作为付费点，比按月更适合日常使用频率
-   - 个人用户够用，多账号用户不限设备时长，价格梯度合理
+   - 养号按日次数限制，简单直观，统计方便
+   - 个人用户够用，多账号用户不限设备次数，价格梯度合理
 
 ---
 
@@ -58,7 +59,7 @@
 
 ### ⚠️ 重要：所有套餐参数**不本地写死**，全部从云端获取
 
-- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_minutes` / `max_daily_creates` / `max_daily_exports` / `package_type` / `expire_date` / 功能权限
+- 激活码验证接口返回完整权限配置：`max_devices` / `max_daily_runs` / `max_daily_creates` / `max_daily_exports` / `package_type` / `expire_date` / 功能权限
 - 本地只做缓存，不从新 hardcode
 - 方便后台随时调整套餐配置，不需要客户端发版
 
@@ -69,7 +70,7 @@
 ### 4.1 启动前权限检查流程
 
 ```python
-def check_can_start(device_id, planned_duration, is_create=False):
+def check_can_start(device_id, is_create=False):
     # 1. 检查授权是否有效（从本地缓存读取）
     license = get_user_license()
     if not license or not license.active or is_expired(license.expire_date):
@@ -77,7 +78,7 @@ def check_can_start(device_id, planned_duration, is_create=False):
     
     # 2. 从license 获取套餐配置（云端返回的，本地缓存）
     max_devices = license.max_devices
-    max_daily_minutes = license.max_daily_minutes
+    max_daily_runs = license.max_daily_runs
     max_daily_creates = license.max_daily_creates
     max_daily_exports = license.max_daily_exports
     
@@ -86,42 +87,32 @@ def check_can_start(device_id, planned_duration, is_create=False):
     if max_devices != -1 and len(registered_devices) > max_devices:
         return False, f"已达到最大设备数限制({max_devices})，请升级套餐", 0
     
-    # 4. 如果是内容创作，检查每日次数
+    # 4. 如果是养号功能，检查每日次数
+    if not is_create:
+        used_runs = get_daily_run_count(get_today())
+        if max_daily_runs != -1 and used_runs >= max_daily_runs:
+            return False, f"今日已使用 {used_runs}/{max_daily_runs} 次养号次数，达到每日限额，请明天再来或升级套餐", 0
+    
+    # 5. 如果是内容创作，检查每日次数
     if is_create:
         used_creates = get_daily_create_count(get_today())
         if max_daily_creates != -1 and used_creates >= max_daily_creates:
             return False, f"今日已使用 {used_creates}/{max_daily_creates} 次创作次数，达到每日限额，请明天再来或升级套餐", 0
     
-    # 5. 检查今日累计养号时长
-    total_used = get_total_daily_usage_all_devices()
-    
-    # max_daily_minutes = -1 表示不限
-    if max_daily_minutes == -1:
-        # 不限时长，直接允许，实际就是计划时长
-        return True, "可以启动", planned_duration
-    
-    remaining = max_daily_minutes - total_used
-    
-    if remaining <= 0:
-        return False, f"今日已累计使用 {total_used} 分钟，达到今日限额({max_daily_minutes} 分钟)，请明天再来或升级套餐", 0
-    
-    actual_duration = planned_duration
-    message = ""
-    
-    if planned_duration > remaining:
-        # 计划超过剩余，允许启动但只用剩余，提示用户
-        actual_duration = remaining
-        message = (f"⚠️ 今日剩余养号额度仅 {remaining} 分钟，"
-                   f"你计划养号 {planned_duration} 分钟，本次将只运行 {remaining} 分钟后自动停止")
-    
-    # 有剩余就允许启动，不管计划
-    if message:
-        return True, message, actual_duration
-    else:
-        return True, "可以启动", actual_duration
+    # 有剩余就允许启动
+    return True, "可以启动", 1
 ```
 
-### 4.2 创作完成后统计次数
+### 4.2 养号完成后统计次数
+
+```python
+def after_run_success():
+    """养号成功后增加每日养号次数"""
+    today = get_today()
+    increment_daily_count(today, "run")
+```
+
+### 4.3 创作完成后统计次数
 
 ```python
 def after_create_success():
@@ -130,7 +121,7 @@ def after_create_success():
     increment_daily_count(today, "create")
 ```
 
-### 4.3 导出完成后统计次数
+### 4.4 导出完成后统计次数
 
 ```python
 def after_export_success():
@@ -163,7 +154,7 @@ def after_export_success():
     "package_type": "basic",
     "expiry_date": "2026-04-20T23:59:59Z",
     "max_devices": 2,
-    "max_daily_minutes": 120,
+    "max_daily_runs": 10,
     "max_daily_creates": 20,
     "max_daily_exports": 20,
     "permissions": {
@@ -201,8 +192,7 @@ CREATE TABLE daily_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
     use_date TEXT NOT NULL,         -- 'YYYY-MM-DD'
-    total_minutes INTEGER DEFAULT 0,  -- 今日累计养号分钟
-    start_count INTEGER DEFAULT 0,      -- 今日养号启动次数
+    run_count INTEGER DEFAULT 0,      -- 今日养号启动次数
     create_count INTEGER DEFAULT 0,     -- 今日内容创作次数
     export_count INTEGER DEFAULT 0,     -- 今日导出分享次数
     update_time TEXT NOT NULL,
@@ -217,7 +207,7 @@ CREATE TABLE user_license (
     package_type TEXT NOT NULL,       -- free / basic / premium
     expire_date TEXT,                -- 过期日期
     max_devices INTEGER NOT NULL,      -- 最大设备数（从云端获取，-1=不限）
-    max_daily_minutes INTEGER NOT NULL, -- 最大每日养号时长（从云端获取，-1=不限）
+    max_daily_runs INTEGER NOT NULL, -- 最大每日养号次数（从云端获取，-1=不限）
     max_daily_creates INTEGER NOT NULL, -- 最大每日内容创作次数（-1=不限）
     max_daily_exports INTEGER NOT NULL,  -- 最大每日导出分享次数（-1=不限）
     create_time TEXT NOT NULL,
@@ -233,13 +223,11 @@ CREATE TABLE user_license (
 ### 激活页面
 - 输入激活码输入框
 - 激活按钮
-- 显示当前套餐信息：套餐类型、过期时间、最大设备数、最大每日分钟数、今日已用分钟数
+- 显示当前套餐信息：套餐类型、过期时间、最大设备数、最大每日养号次数、今日已用养号次数
 - 显示今日创作次数、导出次数，剩余次数
-- 显示今日总已使用时长、剩余时长
 
 ### 设备列表
 - 显示所有已接入设备
-- 显示每个设备今日已用时长
 
 ### 导航栏
 原来的导航增加「授权」标签，顺序：
@@ -263,39 +251,7 @@ CREATE TABLE user_license (
 
 ---
 
-### 2. 使用时长统计方案
-
-#### 统计方式
-
-```
-启动养号 → 记录开始时间戳 → 执行养号 → 养号结束（正常结束/异常退出）→ 计算实际使用分钟数 → 写入本地 SQLite
-```
-
-#### 异常处理（程序被杀死）
-
-**方案：** 使用 `atexit` 注册退出钩子 + 全局记录开始时间/当前设备
-
-```python
-import atexit
-start_time = None
-current_device_id = None
-
-def exit_hook():
-    """程序退出时自动统计时长"""
-    global start_time, current_device_id
-    if start_time and current_device_id:
-        end_time = time.time()
-        used_minutes = int((end_time - start_time) / 60)
-        if used_minutes < 1:
-            used_minutes = 1  # 最少算 1 分钟
-        update_daily_usage(current_device_id, get_today(), used_minutes)
-```
-
-**保证：** 无论正常结束还是用户杀死进程，都会统计时长，不会漏统计。
-
----
-
-### 3. 数据定期清理
+### 2. 数据定期清理
 
 #### 清理规则
 - 保留 **最近 7 天** 的 `daily_usage` 数据
@@ -317,7 +273,7 @@ def clean_old_records(conn):
 
 ---
 
-### 4. 默认配置设计（断网/未激活处理）
+### 3. 默认配置设计（断网/未激活处理）
 
 #### 默认配置（未激活时）
 ```python
@@ -325,7 +281,7 @@ DEFAULT_FREE_LICENSE = {
     "package_type": "free",
     "expire_date": None,       # 永不过期（免费版永远有效）
     "max_devices": 1,         # 免费版 1 个设备
-    "max_daily_minutes": 30,   # 免费版每日 30 分钟
+    "max_daily_runs": 3,      # 免费版每日 3 次养号
     "max_daily_creates": 3,    # 免费版每日 3 次创作
     "max_daily_exports": 3,    # 免费版每日 3 次导出
 }
@@ -338,7 +294,7 @@ DEFAULT_FREE_LICENSE = {
 
 ---
 
-### 5. 前端页面设计
+### 4. 前端页面设计
 
 #### 新增「授权」标签页
 
@@ -349,13 +305,12 @@ DEFAULT_FREE_LICENSE = {
    - 套餐类型
    - 过期日期
    - 最大设备数
-   - 最大每日分钟数
-   - 今日已用分钟数 / 剩余分钟数
+   - 最大每日养号次数
+   - 今日已用养号次数 / 剩余次数
    - 今日已用创作次数 / 剩余次数
    - 今日已用导出次数 / 剩余次数
 4. **设备列表**
    - 设备名称
-   - 今日已用时长
 
 ---
 
@@ -366,13 +321,12 @@ DEFAULT_FREE_LICENSE = {
 | 数据结构设计 | ✅ 完成 |
 | 核心逻辑设计 | ✅ 完成 |
 | **所有参数云端配置，本地不写死** | ✅ 确认 |
-| **异常处理（进程杀死计时）** | ✅ 完成 |
 | **定期数据清理（保留 7 天）** | ✅ 完成 |
 | **默认配置（断网降级可用）** | ✅ 完成 |
 | API 接口设计 | ✅ 完成 |
 | 前端界面设计要点 | ✅ 完成 |
 | 复用现有激活码体系 | ✅ 完成 |
 | **新增笔记导出分享功能设计** | ✅ 完成（按日限制） |
-| **商业分级策略更新** | ✅ 完成 |
+| **商业分级策略更新** | ✅ 完成（改为次数限制） |
 
 服务端开发可以按照这个设计进行开发联调 👍
