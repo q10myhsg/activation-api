@@ -1,0 +1,56 @@
+{
+  "test_date": "2026-03-21T01:00:24.815495",
+  "total_tests": 8,
+  "passed_tests": 5,
+  "failed_tests": 3,
+  "details": [
+    {
+      "name": "模块导入和初始化",
+      "passed": true,
+      "details": "机器码: 83a458221598966803c2c5e38b02600f",
+      "timestamp": "2026-03-21T01:00:24.024783"
+    },
+    {
+      "name": "云端 API 连接准备",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-03-21T01:00:24.025590"
+    },
+    {
+      "name": "生成测试激活码",
+      "passed": false,
+      "details": "HTTP 403",
+      "timestamp": "2026-03-21T01:00:24.804479"
+    },
+    {
+      "name": "验证激活码",
+      "passed": false,
+      "details": "跳过，没有生成激活码",
+      "timestamp": "2026-03-21T01:00:24.804529"
+    },
+    {
+      "name": "LicenseManager 验证激活码",
+      "passed": false,
+      "details": "跳过，没有生成激活码",
+      "timestamp": "2026-03-21T01:00:24.804565"
+    },
+    {
+      "name": "数据库保存和读取授权",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-03-21T01:00:24.812426"
+    },
+    {
+      "name": "数据库每日使用统计",
+      "passed": true,
+      "details": "",
+      "timestamp": "2026-03-21T01:00:24.814369"
+    },
+    {
+      "name": "权限检查功能",
+      "passed": true,
+      "details": "允许: False, 消息: 未激活，请先输入激活码",
+      "timestamp": "2026-03-21T01:00:24.815397"
+    }
+  ]
+}
