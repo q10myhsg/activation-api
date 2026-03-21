@@ -1,12 +1,12 @@
 [submodule "activation-admin"]
 	path = activation-admin
-	url = https://github.com/q10myhsg/activation-admin.git
+	url = https://github.com/q10myhsg/activation-admin
 [submodule "xhs_helper_browser_extension"]
 	path = xhs_helper_browser_extension
-	url = https://github.com/q10myhsg/xhs_helper_browser_extension.git
+	url = https://github.com/q10myhsg/xhs_helper_browser_extension
 [submodule "xhs_helper_api_server"]
 	path = xhs_helper_api_server
-	url = https://github.com/q10myhsg/xhs_helper_api_server.git
+	url = https://github.com/q10myhsg/xhs_helper_api_server
 [submodule "xhs_helper_pc_server"]
 	path = xhs_helper_pc_server
-	url = https://github.com/q10myhsg/xhs_helper_pc_server.git
+	url = https://github.com/q10myhsg/xhs_helper_pc_server
