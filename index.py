@@ -23,6 +23,84 @@ CONFIG = {
 if len(CONFIG["client_api_keys"]) == 0:
     CONFIG["client_api_keys"] = ["test"]
 
+# -------------------------- 新增：套餐配置 --------------------------
+PACKAGE_CONFIGS = {
+    "pc-client": {
+        "free": {
+            "max_devices": 1,
+            "max_daily_yanghao": 3,
+            "max_daily_create": 5,
+            "max_daily_export": 10,
+            "max_daily_main_image": 5,
+            "max_daily_cover_image": 5,
+            "max_single_yanghao_minutes": 20,
+            "daily_yanghao_device_limit": True
+        },
+        "basic": {
+            "max_devices": 3,
+            "max_daily_yanghao": 9,
+            "max_daily_create": 15,
+            "max_daily_export": 30,
+            "max_daily_main_image": 15,
+            "max_daily_cover_image": 15,
+            "max_single_yanghao_minutes": 60,
+            "daily_yanghao_device_limit": False
+        },
+        "advanced": {
+            "max_devices": -1,
+            "max_daily_yanghao": -1,
+            "max_daily_create": -1,
+            "max_daily_export": -1,
+            "max_daily_main_image": -1,
+            "max_daily_cover_image": -1,
+            "max_single_yanghao_minutes": -1,
+            "daily_yanghao_device_limit": False
+        }
+    },
+    "browser-extension": {
+        "free": {
+            "max_devices": 1,
+            "max_daily_yanghao": 3,
+            "max_daily_create": 5,
+            "max_daily_export": 10,
+            "max_daily_main_image": 5,
+            "max_daily_cover_image": 5,
+            "max_single_yanghao_minutes": 20,
+            "daily_yanghao_device_limit": True
+        },
+        "basic": {
+            "max_devices": 3,
+            "max_daily_yanghao": 9,
+            "max_daily_create": 15,
+            "max_daily_export": 30,
+            "max_daily_main_image": 15,
+            "max_daily_cover_image": 15,
+            "max_single_yanghao_minutes": 60,
+            "daily_yanghao_device_limit": False
+        },
+        "advanced": {
+            "max_devices": -1,
+            "max_daily_yanghao": -1,
+            "max_daily_create": -1,
+            "max_daily_export": -1,
+            "max_daily_main_image": -1,
+            "max_daily_cover_image": -1,
+            "max_single_yanghao_minutes": -1,
+            "daily_yanghao_device_limit": False
+        }
+    }
+}
+
+def handle_package_config(body):
+    """获取所有套餐配置
+    新接口：/package/config
+    """
+    return {
+        "status": "success",
+        "message": "获取成功",
+        "data": PACKAGE_CONFIGS
+    }
+
 # -------------------------- 数据存储 --------------------------
 db_initialized = False
 rate_limit_requests = {}
@@ -519,13 +597,19 @@ def handle_verify(body):
     # 如果激活码已经绑定到当前设备，保持原有的过期不变
     # 同一个设备允许多个激活码，查询时会选择最新未过期的
     
+    # 获取套餐配额配置
+    package_type = info.get("package_type", "basic")
+    package_config = PACKAGE_CONFIGS.get(client_type, {}).get(package_type, {})
+    
     return {
         "status": "valid",
         "message": "激活码验证成功",
         "data": {
             "expiry_date": info["expiry_date"],
             "activated_date": info["activated_date"],
-            "machine_code": info["machine_code"]
+            "machine_code": info["machine_code"],
+            "package_type": package_type,
+            **package_config
         }
     }
 
@@ -927,20 +1011,25 @@ def handle_device_info(body):
                             "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
                         }
         
+        # 获取套餐配额配置
+        pkg_type = info.get("package_type", "free") if info else "free"
+        package_config = PACKAGE_CONFIGS.get(client_type, {}).get(pkg_type, {})
+        
         result = {
-            "machine_code": info["machine_code"],
+            "machine_code": info["machine_code"] if info else machine_code,
             "client_type": client_type,
             "is_active": is_active and not expired,
-            "auth_code": info["auth_code"],
-            "package_type": info.get("package_type"),
-            "activated_date": info.get("activated_date"),
-            "expiry_date": info.get("expiry_date"),
+            "auth_code": info["auth_code"] if info else None,
+            "package_type": pkg_type,
+            "activated_date": info.get("activated_date") if info else None,
+            "expiry_date": info.get("expiry_date") if info else None,
             "expired": expired,
             "days_remaining": days_remaining,
             "first_activation": first_activation,
             "last_verify_time": None,
-            "created_at": info.get("activated_date"),
-            "permissions": permissions
+            "created_at": info.get("activated_date") if info else None,
+            "permissions": permissions,
+            **package_config
         }
         
         return {
@@ -1383,7 +1472,10 @@ def main_handler(event, context):
                 }
             return None
         
-        if path.endswith("/auth/verify") and http_method == "POST":
+        if path.endswith("/package/config") and http_method == "POST":
+            # 允许client/admin访问
+            result = handle_package_config(body)
+        elif path.endswith("/auth/verify") and http_method == "POST":
             # 允许client/admin访问
             result = handle_verify(body)
         elif path.endswith("/auth/generate") and http_method == "POST":
