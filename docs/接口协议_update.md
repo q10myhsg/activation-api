@@ -14,8 +14,6 @@
 
 ---
 
----
-
 ## 第一部分：插件客户端接口（Chrome 插件、pc客户端均 调用）
 
 这些接口供 Chrome 插件客户端、pc客户端均  调用，用于激活验证、状态查询和权限获取。
@@ -32,7 +30,7 @@
 |--------|------|------|------|
 | auth_code | string | 是 | 激活码 |
 | machine_code | string | 是 | 机器码（设备唯一标识） |
-| **client_type** | string | 是 | **客户端类型**：<br>`browser-extension`（浏览器插件（支持Chrome、Edge等））/ `pc-client`（电脑客户端），服务端根据类型分配不同token有效期和验证策略 |
+| **client_type** | string | 是 | **客户端类型**：&lt;br&gt;`browser-extension`（浏览器插件（支持Chrome、Edge等））/ `pc-client`（电脑客户端），服务端根据类型分配不同token有效期和验证策略 |
 | plugin_version | string | 是 | 插件/客户端版本号 |
 | current_expiry_date | string | 否 | 当前过期时间（ISO格式，可选） |
 
@@ -101,7 +99,7 @@
 | 参数名 | 类型 | 必填 | 说明 |
 |--------|------|------|------|
 | machine_code | string | 是 | 机器码（设备唯一标识） |
-| **client_type** | string | 是 | **客户端类型**：<br>`browser-extension` / `pc-client`，服务端根据类型返回对应token有效期配置 |
+| **client_type** | string | 是 | **客户端类型**：&lt;br&gt;`browser-extension` / `pc-client`，服务端根据类型返回对应token有效期配置 |
 | plugin_version | string | 是 | 插件/客户端版本号 |
 
 #### 请求示例
@@ -134,26 +132,29 @@
 | data.last_verify_time | string | 上次验证时间（ISO格式） |
 | data.created_at | string | 设备首次记录时间（ISO格式） |
 | data.permissions | object | 功能权限信息 |
-| data.permissions.prompt_word | object | 提示词管理功能权限 （客户端专用）|
-| data.permissions.prompt_word.daily_limit | integer | 每天最多使用次数（-1表示不限制）  （客户端专用）） |
-| data.permissions.prompt_word.enable_like_filter | boolean | 是否启用点赞数过滤功能  （客户端专用））|
-| data.permissions.download | object | 下载功能权限 （客户端专用）） |
-| data.permissions.download.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
-| data.permissions.search | object | 搜索页面功能权限 （客户端专用）） |
-| data.permissions.search.high_value_notes | object | 显示高价值笔记功能权限 （客户端专用）） |
-| data.permissions.search.high_value_notes.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
-| data.permissions.search.keyword_expansion | object | 关键词拓展功能权限 （客户端专用）） |
-| data.permissions.search.keyword_expansion.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
-| data.permissions.auto_use.device_count | integer | 每天养号设备数量(-1 表示不限制)（服务端专用） |
-| data.permissions.auto_use.device_time | integer | 每天单设备养号最长时间设置（-1表示不限制） （服务户端专用）） |
-| data.permissions.pdf.use_count | integer | 每天使用生成PDF数量（-1表示不限制） （服务户端专用）） |
-| data.permissions.cover.use_count | integer | 每日生成封面功能使用次数（-1表示不限制） （服务户端专用）） |
-| data.permissions.transfer.use_count | integer | 每日文件传输到手机功能使用次数（-1表示不限制） （服务户端专用）） |
-
+| data.permissions.prompt_word | object | 提示词管理功能权限 （浏览器插件专用）|
+| data.permissions.prompt_word.daily_limit | integer | 每天最多使用次数（-1表示不限制）  （浏览器插件专用）|
+| data.permissions.prompt_word.enable_like_filter | boolean | 是否启用点赞数过滤功能  （浏览器插件专用）|
+| data.permissions.download | object | 下载功能权限 （浏览器插件专用） |
+| data.permissions.download.daily_limit | integer | 每天最多使用次数（-1表示不限制） （浏览器插件专用）|
+| data.permissions.search | object | 搜索页面功能权限 （浏览器插件专用） |
+| data.permissions.search.high_value_notes | object | 显示高价值笔记功能权限 （浏览器插件专用） |
+| data.permissions.search.high_value_notes.daily_limit | integer | 每天最多使用次数（-1表示不限制） （浏览器插件专用） |
+| data.permissions.search.keyword_expansion | object | 关键词拓展功能权限 （浏览器插件专用） |
+| data.permissions.search.keyword_expansion.daily_limit | integer | 每天最多使用次数（-1表示不限制） （浏览器插件专用） |
+| data.permissions.auto_use | object | 自动养号功能权限（PC客户端专用） |
+| data.permissions.auto_use.device_count | integer | 每天养号设备数量(-1 表示不限制)（PC客户端专用） |
+| data.permissions.auto_use.device_time | integer | 每天单设备养号最长时间设置（-1表示不限制）（PC客户端专用） |
+| data.permissions.pdf | object | PDF生成功能权限（PC客户端专用） |
+| data.permissions.pdf.daily_limit | integer | 每天使用生成PDF数量（-1表示不限制）（PC客户端专用） |
+| data.permissions.cover | object | 封面生成功能权限（PC客户端专用） |
+| data.permissions.cover.daily_limit | integer | 每日生成封面功能使用次数（-1表示不限制）（PC客户端专用） |
+| data.permissions.transfer | object | 文件传输功能权限（PC客户端专用） |
+| data.permissions.transfer.daily_limit | integer | 每日文件传输到手机功能使用次数（-1表示不限制）（PC客户端专用） |
 
 #### 响应示例
 
-**已激活且有效**:
+**示例1：浏览器插件 - 基础版已激活**
 ```json
 {
   "status": "success",
@@ -192,13 +193,51 @@
 }
 ```
 
-**未激活**:
+**示例2：PC客户端 - 高级版已激活**
+```json
+{
+  "status": "success",
+  "message": "查询成功",
+  "data": {
+    "machine_code": "pc-abc123def456",
+    "client_type": "pc-client",
+    "is_active": true,
+    "auth_code": "-1_DEcaW1tMEQMDVhQCXBFVSUwdQ1RWW0cJW1tfUEBXXklSVlFBGA==",
+    "package_type": "premium",
+    "activated_date": "2026-03-14T10:30:00Z",
+    "expiry_date": "9999-12-31T23:59:59",
+    "expired": false,
+    "days_remaining": -1,
+    "first_activation": true,
+    "last_verify_time": "2026-03-18T09:00:00Z",
+    "created_at": "2026-03-14T10:30:00Z",
+    "permissions": {
+      "auto_use": {
+        "device_count": -1,
+        "device_time": -1
+      },
+      "pdf": {
+        "daily_limit": -1
+      },
+      "cover": {
+        "daily_limit": -1
+      },
+      "transfer": {
+        "daily_limit": -1
+      }
+    }
+  }
+}
+```
+
+**未激活示例**
 ```json
 {
   "status": "success",
   "message": "查询成功",
   "data": {
     "machine_code": "abc123def456",
+    "client_type": "browser-extension",
     "is_active": false,
     "auth_code": null,
     "package_type": null,
@@ -230,44 +269,6 @@
 }
 ```
 
-**永久有效示例**:
-```json
-{
-  "status": "success",
-  "message": "查询成功",
-  "data": {
-    "machine_code": "abc123def456",
-    "is_active": true,
-    "auth_code": "-1_DEcaW1tMEQMDVhQCXBFVSUwdQ1RWW0cJW1tfUEBXXklSVlFBGA==",
-    "package_type": "premium",
-    "activated_date": "2026-03-14T10:30:00Z",
-    "expiry_date": "9999-12-31T23:59:59",
-    "expired": false,
-    "days_remaining": -1,
-    "first_activation": true,
-    "last_verify_time": "2026-03-18T09:00:00Z",
-    "created_at": "2026-03-14T10:30:00Z",
-    "permissions": {
-      "prompt_word": {
-        "daily_limit": 50,
-        "enable_like_filter": false
-      },
-      "download": {
-        "daily_limit": 20
-      },
-      "search": {
-        "high_value_notes": {
-          "daily_limit": 100
-        },
-        "keyword_expansion": {
-          "daily_limit": 50
-        }
-      }
-    }
-  }
-}
-```
-
 ---
 
 ## 第二部分：管理端接口（管理后台调用）
@@ -287,7 +288,7 @@
 | duration | integer | 是 | 有效期天数（1、7、30、365、-1表示永久） |
 | count | integer | 否 | 生成激活码的数量，默认为1 |
 | package_type | string | 是 | 套餐类型：free（免费版）/ basic（基础版）/ premium（高级版） |
-| **client_type** | string | 是 | **目标客户端类型**：<br>`browser-extension` / `pc-client`，激活码绑定到特定客户端类型，服务端按类型分配不同策略 |
+| **client_type** | string | 是 | **目标客户端类型**：&lt;br&gt;`browser-extension` / `pc-client`，激活码绑定到特定客户端类型，服务端按类型分配不同策略 |
 
 #### 请求示例
 
@@ -789,7 +790,7 @@
 | package_type | string | 是 | 套餐类型：free / basic / premium |
 | permissions | object | 是 | 完整权限配置JSON |
 
-**permissions 结构**:
+**浏览器插件 permissions 结构示例**:
 ```json
 {
   "prompt_word": {
@@ -810,8 +811,28 @@
 }
 ```
 
+**PC客户端 permissions 结构示例**:
+```json
+{
+  "auto_use": {
+    "device_count": 3,
+    "device_time": 60
+  },
+  "pdf": {
+    "daily_limit": 30
+  },
+  "cover": {
+    "daily_limit": 30
+  },
+  "transfer": {
+    "daily_limit": 30
+  }
+}
+```
+
 #### 请求示例
 
+**示例1：设置浏览器插件高级版权限**
 ```json
 {
   "client_type": "browser-extension",
@@ -836,6 +857,29 @@
 }
 ```
 
+**示例2：设置PC客户端基础版权限**
+```json
+{
+  "client_type": "pc-client",
+  "package_type": "basic",
+  "permissions": {
+    "auto_use": {
+      "device_count": 3,
+      "device_time": 60
+    },
+    "pdf": {
+      "daily_limit": 30
+    },
+    "cover": {
+      "daily_limit": 30
+    },
+    "transfer": {
+      "daily_limit": 30
+    }
+  }
+}
+```
+
 ### 2.12 权限管理 - 删除权限配置
 
 **接口路径**: `/permissions/delete`
@@ -847,30 +891,4 @@
 | 参数名 | 类型 | 必填 | 说明 |
 |--------|------|------|------|
 | client_type | string | 是 | 客户端类型 |
-| package_type | string | 是 | 套餐类型 |
-
----
-
-## 3. 错误码
-
-| 错误码 | 描述 |
-|--------|------|
-| 400 | 请求参数错误 |
-| 401 | 未授权（API Key无效） |
-| 403 | 禁止访问（权限不足） |
-| 404 | 接口不存在 |
-| 500 | 服务器内部错误 |
-
-## 4. 安全性要求
-
-1. **传输安全**: 所有接口必须使用HTTPS
-2. **API Key**: 每个请求必须包含有效的API Key
-3. **机器码生成**: 机器码应基于设备的唯一标识生成，确保唯一性
-4. **激活码加密**: 激活码应使用安全的加密算法生成，包含有效期信息
-5. **防滥用**: 实现请求频率限制，防止接口被滥用
-
-## 5. 核心规则
-
-### 过期时间计算规则
-1. 如果 auth_code 未使用过，首次激活时：
-   - 如果设备已有其他未过期激活码 → **累计有效期**：原过期时间
+| package_type | string |
