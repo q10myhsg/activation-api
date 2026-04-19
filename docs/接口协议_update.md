@@ -2,8 +2,8 @@
 
 ## 1. 接口概述
 
-本项目是Chrome插件激活码验证服务，接口分为两大部分：
-- **插件客户端接口**：供Chrome插件客户端调用，用于验证激活、查询状态、获取权限
+本项目是Chrome插件和pc客户端激活码验证服务，接口分为两大部分：
+- **客户端接口**：供Chrome插件客户端、pc客户端调用，用于验证激活、查询状态、获取权限
 - **管理端接口**：供管理后台调用，用于管理激活码和设备
 
 ## 2. 基础信息
@@ -14,17 +14,11 @@
 
 ---
 
-## 重要说明
-
-⚠️ **收费方案适用范围**：
-- **PC 客户端**：适用新的基于次数和设备的收费方案
-- **浏览器插件**：不受此收费方案限制，保持原有逻辑
-
 ---
 
-## 第一部分：插件客户端接口（Chrome 插件调用）
+## 第一部分：插件客户端接口（Chrome 插件、pc客户端均 调用）
 
-这些接口供 Chrome 插件客户端调用，用于激活验证、状态查询和权限获取。
+这些接口供 Chrome 插件客户端、pc客户端均  调用，用于激活验证、状态查询和权限获取。
 
 ### 1.1 验证激活码接口
 
@@ -140,26 +134,22 @@
 | data.last_verify_time | string | 上次验证时间（ISO格式） |
 | data.created_at | string | 设备首次记录时间（ISO格式） |
 | data.permissions | object | 功能权限信息 |
-| data.permissions.prompt_word | object | 提示词管理功能权限 |
-| data.permissions.prompt_word.daily_limit | integer | 每天最多使用次数（-1表示不限制） |
-| data.permissions.prompt_word.enable_like_filter | boolean | 是否启用点赞数过滤功能 |
-| data.permissions.download | object | 下载功能权限 |
-| data.permissions.download.daily_limit | integer | 每天最多使用次数（-1表示不限制） |
-| data.permissions.search | object | 搜索页面功能权限 |
-| data.permissions.search.high_value_notes | object | 显示高价值笔记功能权限 |
-| data.permissions.search.high_value_notes.daily_limit | integer | 每天最多使用次数（-1表示不限制） |
-| data.permissions.search.keyword_expansion | object | 关键词拓展功能权限 |
-| data.permissions.search.keyword_expansion.daily_limit | integer | 每天最多使用次数（-1表示不限制） |
+| data.permissions.prompt_word | object | 提示词管理功能权限 （客户端专用）|
+| data.permissions.prompt_word.daily_limit | integer | 每天最多使用次数（-1表示不限制）  （客户端专用）） |
+| data.permissions.prompt_word.enable_like_filter | boolean | 是否启用点赞数过滤功能  （客户端专用））|
+| data.permissions.download | object | 下载功能权限 （客户端专用）） |
+| data.permissions.download.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
+| data.permissions.search | object | 搜索页面功能权限 （客户端专用）） |
+| data.permissions.search.high_value_notes | object | 显示高价值笔记功能权限 （客户端专用）） |
+| data.permissions.search.high_value_notes.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
+| data.permissions.search.keyword_expansion | object | 关键词拓展功能权限 （客户端专用）） |
+| data.permissions.search.keyword_expansion.daily_limit | integer | 每天最多使用次数（-1表示不限制） （客户端专用）） |
+| data.permissions.auto_use.device_count | integer | 每天养号设备数量(-1 表示不限制)（服务端专用） |
+| data.permissions.auto_use.device_time | integer | 每天单设备养号最长时间设置（-1表示不限制） （服务户端专用）） |
+| data.permissions.pdf.use_count | integer | 每天使用生成PDF数量（-1表示不限制） （服务户端专用）） |
+| data.permissions.cover.use_count | integer | 每日生成封面功能使用次数（-1表示不限制） （服务户端专用）） |
+| data.permissions.transfer.use_count | integer | 每日文件传输到手机功能使用次数（-1表示不限制） （服务户端专用）） |
 
-### 套餐配额对照表（PC 客户端专用）
-
-| 套餐 | 设备数 | 每日养号 | 每日创作 | 每日导出 | 每日主图 | 每日封面 | 单次时长 | 设备限制 | 价格(月) | 价格(年) |
-|------|--------|----------|----------|----------|----------|----------|----------|----------|-----------|-----------|
-| 免费版 | 1 | 3 | 5 | 10 | 5 | 5 | 20min | 每天仅1设备 | 免费 | 免费 |
-| 基础版 | 3 | 15 | 30 | 60 | 30 | 30 | 60min | 无限制 | ¥29 | ¥299 |
-| 高级版 | 不限 | 不限 | 不限 | 不限 | 不限 | 不限 | 不限 | 无限制 | ¥99 | ¥999 |
-
-> ⚠️ **注意**：以上配额仅适用于 PC 客户端，浏览器插件不受此限制。
 
 #### 响应示例
 
