@@ -24,6 +24,48 @@ CONFIG = {
 if len(CONFIG["client_api_keys"]) == 0:
     CONFIG["client_api_keys"] = ["test"]
 
+# -------------------------- 套餐配置 --------------------------
+# 套餐配置（默认值）
+PACKAGE_CONFIG = {
+    "browser-extension": {
+        "free": {
+            "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
+            "download": {"daily_limit": 20},
+            "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
+        },
+        "basic": {
+            "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
+            "download": {"daily_limit": 20},
+            "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
+        },
+        "premium": {
+            "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
+            "download": {"daily_limit": 50},
+            "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
+        }
+    },
+    "pc-client": {
+        "free": {
+            "auto_use": {"device_count": 1, "device_time": 20},
+            "pdf": {"daily_limit": 10},
+            "cover": {"daily_limit": 5},
+            "transfer": {"daily_limit": 10}
+        },
+        "basic": {
+            "auto_use": {"device_count": 3, "device_time": 60},
+            "pdf": {"daily_limit": 30},
+            "cover": {"daily_limit": 30},
+            "transfer": {"daily_limit": 30}
+        },
+        "premium": {
+            "auto_use": {"device_count": -1, "device_time": -1},
+            "pdf": {"daily_limit": -1},
+            "cover": {"daily_limit": -1},
+            "transfer": {"daily_limit": -1}
+        }
+    }
+}
+
 # -------------------------- 数据存储 --------------------------
 db_initialized = False
 rate_limit_requests = {}
@@ -92,37 +134,40 @@ def init_db():
         # 默认权限配置
         default_permissions = {
             "browser-extension": {
-                "basic": {
+                "free": {
                     "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
                     "download": {"daily_limit": 20},
                     "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
                 },
-                "premium": {
+                "basic": {
                     "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
                     "download": {"daily_limit": 20},
                     "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
                 },
-                "vip": {
+                "premium": {
                     "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
                     "download": {"daily_limit": 50},
                     "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
                 }
             },
             "pc-client": {
+                "free": {
+                    "auto_use": {"device_count": 1, "device_time": 20},
+                    "pdf": {"daily_limit": 10},
+                    "cover": {"daily_limit": 5},
+                    "transfer": {"daily_limit": 10}
+                },
                 "basic": {
-                    "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
-                    "download": {"daily_limit": 30},
-                    "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                    "auto_use": {"device_count": 3, "device_time": 60},
+                    "pdf": {"daily_limit": 30},
+                    "cover": {"daily_limit": 30},
+                    "transfer": {"daily_limit": 30}
                 },
                 "premium": {
-                    "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
-                    "download": {"daily_limit": 50},
-                    "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
-                },
-                "vip": {
-                    "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
-                    "download": {"daily_limit": 100},
-                    "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
+                    "auto_use": {"device_count": -1, "device_time": -1},
+                    "pdf": {"daily_limit": -1},
+                    "cover": {"daily_limit": -1},
+                    "transfer": {"daily_limit": -1}
                 }
             }
         }
@@ -892,42 +937,45 @@ def handle_device_info(body):
             else:
                 # 如果数据库没有配置，fallback到默认值
                 if ct == "browser-extension":
-                    if package_type == "basic":
+                    if package_type == "free":
                         permissions = {
                             "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
                             "download": {"daily_limit": 20},
                             "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
                         }
-                    elif package_type == "premium":
+                    elif package_type == "basic":
                         permissions = {
                             "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
                             "download": {"daily_limit": 20},
                             "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
                         }
-                    elif package_type == "vip":
+                    elif package_type == "premium":
                         permissions = {
                             "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
                             "download": {"daily_limit": 50},
                             "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
                         }
                 elif ct == "pc-client":
-                    if package_type == "basic":
+                    if package_type == "free":
                         permissions = {
-                            "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
-                            "download": {"daily_limit": 30},
-                            "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                            "auto_use": {"device_count": 1, "device_time": 20},
+                            "pdf": {"daily_limit": 10},
+                            "cover": {"daily_limit": 5},
+                            "transfer": {"daily_limit": 10}
+                        }
+                    elif package_type == "basic":
+                        permissions = {
+                            "auto_use": {"device_count": 3, "device_time": 60},
+                            "pdf": {"daily_limit": 30},
+                            "cover": {"daily_limit": 30},
+                            "transfer": {"daily_limit": 30}
                         }
                     elif package_type == "premium":
                         permissions = {
-                            "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
-                            "download": {"daily_limit": 50},
-                            "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
-                        }
-                    elif package_type == "vip":
-                        permissions = {
-                            "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
-                            "download": {"daily_limit": 100},
-                            "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
+                            "auto_use": {"device_count": -1, "device_time": -1},
+                            "pdf": {"daily_limit": -1},
+                            "cover": {"daily_limit": -1},
+                            "transfer": {"daily_limit": -1}
                         }
         
         result = {
@@ -1242,6 +1290,36 @@ def handle_permissions_set(body):
             "data": None
         }
 
+def handle_package_config(body):
+    """获取套餐配置接口
+    
+    请求参数: 无
+    """
+    try:
+        # 构建返回数据：先从数据库读取，如果没有则用默认配置
+        result = {}
+        for client_type in PACKAGE_CONFIG:
+            result[client_type] = {}
+            for package_type in PACKAGE_CONFIG[client_type]:
+                db_perm = get_package_permission(client_type, package_type)
+                if db_perm is not None:
+                    result[client_type][package_type] = db_perm
+                else:
+                    result[client_type][package_type] = PACKAGE_CONFIG[client_type][package_type]
+        
+        return {
+            "status": "success",
+            "message": "获取套餐配置成功",
+            "data": result
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"获取套餐配置失败: {str(e)}",
+            "data": None
+        }
+
 def handle_permissions_delete(body):
     """删除权限配置（管理接口）
     
@@ -1452,6 +1530,9 @@ def main_handler(event, context):
             if check:
                 return check
             result = handle_permissions_delete(body)
+        elif path.endswith("/package/config") and http_method == "POST":
+            # 允许client/admin访问
+            result = handle_package_config(body)
         else:
             return {
                 "statusCode": 404,
