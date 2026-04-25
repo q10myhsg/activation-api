@@ -20,11 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# Virtual Environment
 venv/
-ENV/
 env/
-.venv
+ENV/
 
 # IDE
 .vscode/
@@ -33,23 +32,19 @@ env/
 *.swo
 *~
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
 # Database
 *.db
 *.sqlite
 *.sqlite3
 
-# Logs
+# Temporary files
+tmp/
+*.tmp
 *.log
 
-# Submodule build artifacts
-xhs_helper_api_server/__pycache__/
-xhs_helper_pc_server/__pycache__/
-activation-admin/__pycache__/
+# OS
+.DS_Store
+Thumbs.db
 
-# Config files with sensitive data
-config/
+# Submodule tracking (but keep the submodule directories)
+# Note: Git submodules are tracked via .gitmodules, not .gitignore
