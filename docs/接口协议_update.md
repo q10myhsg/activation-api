@@ -145,6 +145,9 @@
 | data.permissions.auto_use | object | 自动养号功能权限（PC客户端专用） |
 | data.permissions.auto_use.device_count | integer | 每天养号设备数量(-1 表示不限制)（PC客户端专用） |
 | data.permissions.auto_use.device_time | integer | 每天单设备养号最长时间设置（-1表示不限制）（PC客户端专用） |
+| data.permissions.auto_use.daily_count | integer | 每天总养号次数(-1 表示不限制)（PC客户端专用） |
+| data.permissions.create | object | 内容创作功能权限（PC客户端专用） |
+| data.permissions.create.daily_limit | integer | 每日内容创作次数(-1 表示不限制)（PC客户端专用） |
 | data.permissions.pdf | object | PDF生成功能权限（PC客户端专用） |
 | data.permissions.pdf.daily_limit | integer | 每天使用生成PDF数量（-1表示不限制）（PC客户端专用） |
 | data.permissions.cover | object | 封面生成功能权限（PC客户端专用） |
@@ -214,7 +217,11 @@
     "permissions": {
       "auto_use": {
         "device_count": -1,
-        "device_time": -1
+        "device_time": -1,
+        "daily_count": -1
+      },
+      "create": {
+        "daily_limit": -1
       },
       "pdf": {
         "daily_limit": -1
@@ -816,7 +823,11 @@
 {
   "auto_use": {
     "device_count": 3,
-    "device_time": 60
+    "device_time": 60,
+    "daily_count": 9
+  },
+  "create": {
+    "daily_limit": 15
   },
   "pdf": {
     "daily_limit": 30
@@ -865,7 +876,11 @@
   "permissions": {
     "auto_use": {
       "device_count": 3,
-      "device_time": 60
+      "device_time": 60,
+      "daily_count": 9
+    },
+    "create": {
+      "daily_limit": 15
     },
     "pdf": {
       "daily_limit": 30
