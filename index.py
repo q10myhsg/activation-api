@@ -5,6 +5,7 @@ import time
 import os
 import sqlite3
 import secrets
+import base64
 from datetime import datetime, timedelta
 import traceback
 
@@ -23,83 +24,47 @@ CONFIG = {
 if len(CONFIG["client_api_keys"]) == 0:
     CONFIG["client_api_keys"] = ["test"]
 
-# -------------------------- 新增：套餐配置 --------------------------
-PACKAGE_CONFIGS = {
-    "pc-client": {
-        "free": {
-            "max_devices": 1,
-            "max_daily_yanghao": 3,
-            "max_daily_create": 5,
-            "max_daily_export": 10,
-            "max_daily_main_image": 5,
-            "max_daily_cover_image": 5,
-            "max_single_yanghao_minutes": 20,
-            "daily_yanghao_device_limit": True
-        },
-        "basic": {
-            "max_devices": 3,
-            "max_daily_yanghao": 9,
-            "max_daily_create": 15,
-            "max_daily_export": 30,
-            "max_daily_main_image": 15,
-            "max_daily_cover_image": 15,
-            "max_single_yanghao_minutes": 60,
-            "daily_yanghao_device_limit": False
-        },
-        "advanced": {
-            "max_devices": -1,
-            "max_daily_yanghao": -1,
-            "max_daily_create": -1,
-            "max_daily_export": -1,
-            "max_daily_main_image": -1,
-            "max_daily_cover_image": -1,
-            "max_single_yanghao_minutes": -1,
-            "daily_yanghao_device_limit": False
-        }
-    },
+# -------------------------- 套餐配置 --------------------------
+# 套餐配置（默认值）
+PACKAGE_CONFIG = {
     "browser-extension": {
         "free": {
-            "max_devices": 1,
-            "max_daily_yanghao": 3,
-            "max_daily_create": 5,
-            "max_daily_export": 10,
-            "max_daily_main_image": 5,
-            "max_daily_cover_image": 5,
-            "max_single_yanghao_minutes": 20,
-            "daily_yanghao_device_limit": True
+            "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
+            "download": {"daily_limit": 20},
+            "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
         },
         "basic": {
-            "max_devices": 3,
-            "max_daily_yanghao": 9,
-            "max_daily_create": 15,
-            "max_daily_export": 30,
-            "max_daily_main_image": 15,
-            "max_daily_cover_image": 15,
-            "max_single_yanghao_minutes": 60,
-            "daily_yanghao_device_limit": False
+            "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
+            "download": {"daily_limit": 20},
+            "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
         },
-        "advanced": {
-            "max_devices": -1,
-            "max_daily_yanghao": -1,
-            "max_daily_create": -1,
-            "max_daily_export": -1,
-            "max_daily_main_image": -1,
-            "max_daily_cover_image": -1,
-            "max_single_yanghao_minutes": -1,
-            "daily_yanghao_device_limit": False
+        "premium": {
+            "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
+            "download": {"daily_limit": 50},
+            "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
+        }
+    },
+    "pc-client": {
+        "free": {
+            "auto_use": {"device_count": 1, "device_time": 20},
+            "pdf": {"daily_limit": 10},
+            "cover": {"daily_limit": 5},
+            "transfer": {"daily_limit": 10}
+        },
+        "basic": {
+            "auto_use": {"device_count": 3, "device_time": 60},
+            "pdf": {"daily_limit": 30},
+            "cover": {"daily_limit": 30},
+            "transfer": {"daily_limit": 30}
+        },
+        "premium": {
+            "auto_use": {"device_count": -1, "device_time": -1},
+            "pdf": {"daily_limit": -1},
+            "cover": {"daily_limit": -1},
+            "transfer": {"daily_limit": -1}
         }
     }
 }
-
-def handle_package_config(body):
-    """获取所有套餐配置
-    新接口：/package/config
-    """
-    return {
-        "status": "success",
-        "message": "获取成功",
-        "data": PACKAGE_CONFIGS
-    }
 
 # -------------------------- 数据存储 --------------------------
 db_initialized = False
@@ -169,37 +134,40 @@ def init_db():
         # 默认权限配置
         default_permissions = {
             "browser-extension": {
-                "basic": {
+                "free": {
                     "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
                     "download": {"daily_limit": 20},
                     "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
                 },
-                "premium": {
+                "basic": {
                     "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
                     "download": {"daily_limit": 20},
                     "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
                 },
-                "vip": {
+                "premium": {
                     "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
                     "download": {"daily_limit": 50},
                     "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
                 }
             },
             "pc-client": {
+                "free": {
+                    "auto_use": {"device_count": 1, "device_time": 20},
+                    "pdf": {"daily_limit": 10},
+                    "cover": {"daily_limit": 5},
+                    "transfer": {"daily_limit": 10}
+                },
                 "basic": {
-                    "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
-                    "download": {"daily_limit": 30},
-                    "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                    "auto_use": {"device_count": 3, "device_time": 60},
+                    "pdf": {"daily_limit": 30},
+                    "cover": {"daily_limit": 30},
+                    "transfer": {"daily_limit": 30}
                 },
                 "premium": {
-                    "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
-                    "download": {"daily_limit": 50},
-                    "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
-                },
-                "vip": {
-                    "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
-                    "download": {"daily_limit": 100},
-                    "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
+                    "auto_use": {"device_count": -1, "device_time": -1},
+                    "pdf": {"daily_limit": -1},
+                    "cover": {"daily_limit": -1},
+                    "transfer": {"daily_limit": -1}
                 }
             }
         }
@@ -428,6 +396,7 @@ def check_rate_limit(client_ip):
     window_start = now - 60
     if client_ip not in rate_limit_requests:
         rate_limit_requests[client_ip] = []
+    # 清理60秒前的过期记录，防止内存增长
     requests = [t for t in rate_limit_requests[client_ip] if t > window_start]
     if len(requests) >= CONFIG["rate_limit"]:
         return False
@@ -597,25 +566,20 @@ def handle_verify(body):
     # 如果激活码已经绑定到当前设备，保持原有的过期不变
     # 同一个设备允许多个激活码，查询时会选择最新未过期的
     
-    # 获取套餐配额配置
-    package_type = info.get("package_type", "basic")
-    package_config = PACKAGE_CONFIGS.get(client_type, {}).get(package_type, {})
-    
     return {
         "status": "valid",
         "message": "激活码验证成功",
         "data": {
             "expiry_date": info["expiry_date"],
             "activated_date": info["activated_date"],
-            "machine_code": info["machine_code"],
-            "package_type": package_type,
-            **package_config
+            "machine_code": info["machine_code"]
         }
     }
 
 def handle_generate(body):
     duration = body.get("duration")
     count = body.get("count", 1)
+    count = min(max(1, count), 100)  # 限制一次最多生成100个，防止恶意打爆数据库
     package_type = body.get("package_type")
     client_type = body.get("client_type")
     
@@ -973,63 +937,61 @@ def handle_device_info(body):
             else:
                 # 如果数据库没有配置，fallback到默认值
                 if ct == "browser-extension":
-                    if package_type == "basic":
+                    if package_type == "free":
                         permissions = {
                             "prompt_word": {"daily_limit": 20, "enable_like_filter": True},
                             "download": {"daily_limit": 20},
                             "search": {"high_value_notes": {"daily_limit": 30}, "keyword_expansion": {"daily_limit": 10}}
                         }
-                    elif package_type == "premium":
+                    elif package_type == "basic":
                         permissions = {
                             "prompt_word": {"daily_limit": 50, "enable_like_filter": False},
                             "download": {"daily_limit": 20},
                             "search": {"high_value_notes": {"daily_limit": 100}, "keyword_expansion": {"daily_limit": 50}}
                         }
-                    elif package_type == "vip":
+                    elif package_type == "premium":
                         permissions = {
                             "prompt_word": {"daily_limit": 100, "enable_like_filter": False},
                             "download": {"daily_limit": 50},
                             "search": {"high_value_notes": {"daily_limit": 200}, "keyword_expansion": {"daily_limit": 100}}
                         }
                 elif ct == "pc-client":
-                    if package_type == "basic":
+                    if package_type == "free":
                         permissions = {
-                            "prompt_word": {"daily_limit": 30, "enable_like_filter": True},
-                            "download": {"daily_limit": 30},
-                            "search": {"high_value_notes": {"daily_limit": 50}, "keyword_expansion": {"daily_limit": 20}}
+                            "auto_use": {"device_count": 1, "device_time": 20},
+                            "pdf": {"daily_limit": 10},
+                            "cover": {"daily_limit": 5},
+                            "transfer": {"daily_limit": 10}
+                        }
+                    elif package_type == "basic":
+                        permissions = {
+                            "auto_use": {"device_count": 3, "device_time": 60},
+                            "pdf": {"daily_limit": 30},
+                            "cover": {"daily_limit": 30},
+                            "transfer": {"daily_limit": 30}
                         }
                     elif package_type == "premium":
                         permissions = {
-                            "prompt_word": {"daily_limit": 80, "enable_like_filter": False},
-                            "download": {"daily_limit": 50},
-                            "search": {"high_value_notes": {"daily_limit": 150}, "keyword_expansion": {"daily_limit": 80}}
+                            "auto_use": {"device_count": -1, "device_time": -1},
+                            "pdf": {"daily_limit": -1},
+                            "cover": {"daily_limit": -1},
+                            "transfer": {"daily_limit": -1}
                         }
-                    elif package_type == "vip":
-                        permissions = {
-                            "prompt_word": {"daily_limit": 150, "enable_like_filter": False},
-                            "download": {"daily_limit": 100},
-                            "search": {"high_value_notes": {"daily_limit": 300}, "keyword_expansion": {"daily_limit": 150}}
-                        }
-        
-        # 获取套餐配额配置
-        pkg_type = info.get("package_type", "free") if info else "free"
-        package_config = PACKAGE_CONFIGS.get(client_type, {}).get(pkg_type, {})
         
         result = {
-            "machine_code": info["machine_code"] if info else machine_code,
+            "machine_code": info["machine_code"],
             "client_type": client_type,
             "is_active": is_active and not expired,
-            "auth_code": info["auth_code"] if info else None,
-            "package_type": pkg_type,
-            "activated_date": info.get("activated_date") if info else None,
-            "expiry_date": info.get("expiry_date") if info else None,
+            "auth_code": info["auth_code"],
+            "package_type": info.get("package_type"),
+            "activated_date": info.get("activated_date"),
+            "expiry_date": info.get("expiry_date"),
             "expired": expired,
             "days_remaining": days_remaining,
             "first_activation": first_activation,
             "last_verify_time": None,
-            "created_at": info.get("activated_date") if info else None,
-            "permissions": permissions,
-            **package_config
+            "created_at": info.get("activated_date"),
+            "permissions": permissions
         }
         
         return {
@@ -1328,6 +1290,36 @@ def handle_permissions_set(body):
             "data": None
         }
 
+def handle_package_config(body):
+    """获取套餐配置接口
+    
+    请求参数: 无
+    """
+    try:
+        # 构建返回数据：先从数据库读取，如果没有则用默认配置
+        result = {}
+        for client_type in PACKAGE_CONFIG:
+            result[client_type] = {}
+            for package_type in PACKAGE_CONFIG[client_type]:
+                db_perm = get_package_permission(client_type, package_type)
+                if db_perm is not None:
+                    result[client_type][package_type] = db_perm
+                else:
+                    result[client_type][package_type] = PACKAGE_CONFIG[client_type][package_type]
+        
+        return {
+            "status": "success",
+            "message": "获取套餐配置成功",
+            "data": result
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"获取套餐配置失败: {str(e)}",
+            "data": None
+        }
+
 def handle_permissions_delete(body):
     """删除权限配置（管理接口）
     
@@ -1430,11 +1422,18 @@ def main_handler(event, context):
         request_api_key = event.get("queryString", {}).get("apiKey", 
                         body.get("apiKey"))
     
-    # 调试：打印配置信息，方便排查
-    print(f"ADMIN_API_KEY from env: '{os.environ.get('ADMIN_API_KEY', '')}'")
-    print(f"CLIENT_API_KEYS from env: '{os.environ.get('CLIENT_API_KEYS', '')}'")
-    print(f"CONFIG client_api_keys: {CONFIG['client_api_keys']}")
-    print(f"Request API Key: '{request_api_key}'")
+    # 调试：打印配置信息，方便排查（不打印完整API Key）
+    def mask_api_key(key):
+        if not key:
+            return ''
+        if len(key) <= 8:
+            return '*' * len(key)
+        return key[:4] + '...' + key[-4:]
+    
+    print(f"ADMIN_API_KEY configured: {len(CONFIG['admin_api_key']) > 0}")
+    print(f"CLIENT_API_KEYS count: {len(CONFIG['client_api_keys'])}")
+    if request_api_key:
+        print(f"Request API Key: {mask_api_key(request_api_key)}")
     
     role, valid = verify_api_key(request_api_key)
     if not valid:
@@ -1446,9 +1445,7 @@ def main_handler(event, context):
                 "message": "API Key 无效",
                 "debug": {
                     "admin_api_key_configured": len(CONFIG["admin_api_key"]) > 0,
-                    "client_api_keys_count": len(CONFIG["client_api_keys"]),
-                    "client_api_keys": CONFIG["client_api_keys"],
-                    "request_api_key": request_api_key
+                    "client_api_keys_count": len(CONFIG["client_api_keys"])
                 },
                 "data": None
             }, ensure_ascii=False)
@@ -1472,10 +1469,7 @@ def main_handler(event, context):
                 }
             return None
         
-        if path.endswith("/package/config") and http_method == "POST":
-            # 允许client/admin访问
-            result = handle_package_config(body)
-        elif path.endswith("/auth/verify") and http_method == "POST":
+        if path.endswith("/auth/verify") and http_method == "POST":
             # 允许client/admin访问
             result = handle_verify(body)
         elif path.endswith("/auth/generate") and http_method == "POST":
@@ -1536,6 +1530,9 @@ def main_handler(event, context):
             if check:
                 return check
             result = handle_permissions_delete(body)
+        elif path.endswith("/package/config") and http_method == "POST":
+            # 允许client/admin访问
+            result = handle_package_config(body)
         else:
             return {
                 "statusCode": 404,
