@@ -6,7 +6,7 @@
 	url = https://github.com/q10myhsg/xhs_helper_browser_extension
 [submodule "xhs_helper_api_server"]
 	path = xhs_helper_api_server
-	url = https://github.com/q10myhsg/xhs_helper_api_server
+	url = https://github.com/q10myhsg/xhs_helper_api_server.git
 [submodule "xhs_helper_pc_server"]
 	path = xhs_helper_pc_server
 	url = https://github.com/q10myhsg/xhs_helper_pc_server
