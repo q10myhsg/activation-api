@@ -148,8 +148,7 @@
 | data.permissions.auto_use.daily_count | integer | 每天总养号次数(-1 表示不限制)（PC客户端专用） |
 | data.permissions.create | object | 内容创作功能权限（PC客户端专用） |
 | data.permissions.create.daily_limit | integer | 每日内容创作次数(-1 表示不限制)（PC客户端专用） |
-| data.permissions.pdf | object | PDF生成功能权限（PC客户端专用） |
-| data.permissions.pdf.daily_limit | integer | 每天使用生成PDF数量（-1表示不限制）（PC客户端专用） |
+
 | data.permissions.cover | object | 封面生成功能权限（PC客户端专用） |
 | data.permissions.cover.daily_limit | integer | 每日生成封面功能使用次数（-1表示不限制）（PC客户端专用） |
 | data.permissions.transfer | object | 文件传输功能权限（PC客户端专用） |
@@ -221,9 +220,6 @@
         "daily_count": -1
       },
       "create": {
-        "daily_limit": -1
-      },
-      "pdf": {
         "daily_limit": -1
       },
       "cover": {
@@ -829,9 +825,6 @@
   "create": {
     "daily_limit": 15
   },
-  "pdf": {
-    "daily_limit": 30
-  },
   "cover": {
     "daily_limit": 30
   },
@@ -881,9 +874,6 @@
     },
     "create": {
       "daily_limit": 15
-    },
-    "pdf": {
-      "daily_limit": 30
     },
     "cover": {
       "daily_limit": 30
